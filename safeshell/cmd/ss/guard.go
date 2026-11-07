@@ -48,11 +48,16 @@ opts:
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
-	line := strings.Join(args, " ")
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
+	return guardLine(strings.Join(args, " "), cwd, stdout, stderr, color)
+}
+
+// guardLine analyses one command line, asks if needed, and prints what to run.
+func guardLine(line, cwd string, stdout, stderr io.Writer, color bool) int {
 	a := analyze(context.Background(), line, cwd)
+	aiReview(&a, stderr)
 	if a.Decision != domain.Allow {
 		printAnalysis(stderr, a, color)
 	}

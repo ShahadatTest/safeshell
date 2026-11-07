@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"safeshell/internal/ai"
 	"safeshell/internal/audit"
 	"strings"
 	"testing"
@@ -90,6 +91,7 @@ func TestHookPrintsScript(t *testing.T) {
 func TestMain(m *testing.M) { // never write the real audit log from tests
 	d, _ := os.MkdirTemp("", "ss-audit")
 	auditPath = func() string { return filepath.Join(d, "audit.jsonl") }
+	backend = func() (ai.Backend, error) { return nil, nil } // tests never reach a real model
 	code := m.Run()
 	os.RemoveAll(d)
 	os.Exit(code)
