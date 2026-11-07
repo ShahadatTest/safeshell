@@ -68,13 +68,44 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 # SafeShell project specifics
 
-Go module `safeshell` lives in `safeshell/` (git root is this folder). See `README.md` and `doc/architecture.md`.
+Go module `safeshell` lives in `safeshell/`; the git root is this folder. Read `README.md` and `doc/architecture.md` before structural work.
 
-- **Check before commit:** from `safeshell/`: `make check`; for sandbox/hook/daemon changes also `make build && make integration`. `SS_SWEEP=1 go test ./test/integration -run Sweep` runs all labelled commands through the real binary.
-- **Architecture rules:** `domain/classify/policy/report` stay pure (no I/O). `engine` talks to adapters only through consumer-side ports; `cmd/ss` is the only composition root. Effects and the AI can only raise a risk level, never lower it.
-- **Classifier changes:** update `eval/corpus` (dev) and keep `eval/heldout` independent; `TestHeldoutReport` enforces accuracy floors.
-- **AI changes:** `ss ai bench` (43 requests, fixed `eval.BenchEnv`) measures accuracy; cloud results vary run to run (about 95-100% for Gemini flash-lite).
-- **Secrets:** never write API keys to the repo, config, tests or logs. Live tests pass keys via env vars only (`GEMINI_API_KEY` etc.).
-- **Commits:** short conventional messages, no co-author lines, fewer bigger commits, never push unless asked. Don't rewrite history without approval.
-- **Releases:** tag `vX.Y.Z` and push; `.github/workflows/release.yml` publishes. Version comes from `-X main.version`.
-- **Don't** run downloaded binaries (llama-server) or bypass permission denials without the user's approval.
+## Workflow (pull requests only)
+- `main` is protected: nothing is committed to it directly. Every change is a branch + PR, CI green, then merged.
+- Branch names: `feat/...`, `fix/...`, `chore/...`, `docs/...`, `refactor/...`, `test/...`. One concern per PR; fewer, bigger commits inside it.
+- Commit messages: short, conventional (`feat(ai): ...`, `fix(sandbox): ...`), no co-author lines. PR descriptions follow `.github/pull_request_template.md`.
+- Never push, open or merge a PR unless the user asks. Never force-push or rewrite history without approval.
+- Before opening a PR run, from `safeshell/`: `make check`; for sandbox/hook/daemon/snapshot changes also `make build && make integration`.
+
+## Releases
+- A release is a PR from a branch named exactly `release/vX.Y.Z` into `main`. Merging it triggers `.github/workflows/release.yml`, which tags, builds tarballs + `.deb` + `SHA256SUMS`, and creates the GitHub Release with the files attached.
+- The release PR contains only release prep (docs, changelog notes, version mentions). Features land through their own PRs first.
+- Version comes from the branch name via `-X main.version`; semver. `.deb` version is the tag without `v`.
+- Users download the `.deb` (or tarball) from the GitHub Release. Getting into Debian/Ubuntu's own repositories is a separate, manual process described in the README.
+- One-time repo setup (owner only): branch protection on `main` requiring the `check` job. No secrets are needed.
+
+## Architecture rules
+- Hexagonal. `internal/domain`, `classify`, `policy`, `report` are pure: no file, process, network or env access, no imports of adapters.
+- `internal/engine` depends only on interfaces defined in the engine package (consumer-side ports). Adapters (`sandbox`, `snapshot`, `ai/*`, `runtime`, `ipc`) implement them and never import `engine`.
+- `cmd/ss` is the only composition root: it wires adapters to the engine. No business logic there beyond argument handling and printing.
+- Safety invariants: effects and the AI can only raise a risk level, never lower it. Evidence order ESTIMATED < INSPECTED < PREVIEWED < OBSERVED. Anything unknown, failed or timed out stays at or above its rule level and is not run unattended. The hook fails open with a visible warning if SafeShell itself breaks.
+- The sandbox must never modify real files; anything that needs a real side effect is previewed or inspected read-only.
+- New shells, snapshot backends, AI providers or inspectors are new adapters/files, not edits spread through the engine.
+
+## Coding rules
+- Follow the `golang` skill and standard Go style; `gofmt` clean; `go vet` clean; race-detector clean.
+- Minimum code that solves the problem (see sections above). No speculative options, no abstractions for single use, no dead code.
+- Errors: wrap with `%w`, say what the user can do, never quote response bodies or secrets. Context passed first; no global mutable state except the two documented test seams in `cmd/ss/main.go`.
+- User-facing text is plain English (no jargon or internal terms), short, and says the next step.
+- Linux only, amd64 + arm64 (riscv64 must vet). CGO off. New dependencies need a reason in the PR.
+
+## Testing rules
+- Every behaviour change has a test; every bug fix has a test that failed before. Table tests for classifier rules.
+- Classifier: edit `eval/corpus` (dev) freely; `eval/heldout` is independent and only grows from new, unseen cases. `TestHeldoutReport` enforces the accuracy floors; never lower a floor to pass.
+- Integration tests (`test/integration`) use the real binary and kernel and skip themselves when the sandbox is unavailable. `SS_SWEEP=1 go test ./test/integration -run Sweep` pushes every labelled command through the real binary.
+- AI: `ss ai bench` (43 requests, fixed `eval.BenchEnv`) is the accuracy measure; cloud scores vary (about 95-100% Gemini flash-lite, 97% local Qwen 3B). Unit tests use fake backends, never the network.
+- Live provider tests are opt-in and take keys from env vars only.
+
+## Security and secrets
+- Never put API keys, tokens or passwords in the repo, config files, tests, logs or commit messages. Keys live in `keys.json` (0600) or env vars.
+- Do not run downloaded binaries or work around permission denials without the user's approval.
