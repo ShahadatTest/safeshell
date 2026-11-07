@@ -19,6 +19,7 @@ type Result struct {
 	Stdout    string
 	Stderr    string
 	Diff      FileDiff
+	Net       []NetAttempt // network operations the command tried; the sandbox has no route out
 	Duration  time.Duration
 	Truncated bool // output was cut at MaxOutput
 	// Warnings list parts of the filesystem that could not be mirrored; they
