@@ -26,6 +26,7 @@ Contents: [Ways to help](#ways-to-help) · [Set up](#set-up-your-machine) · [Ho
 | `priority: high` | fix first: a wrong safety rating or data-loss risk |
 | `priority: medium` | should be fixed soon |
 | `priority: low` | nice to have |
+| `good first issue` | small, well explained, no deep knowledge of the sandbox needed: a good place to start |
 | `wip` | someone is working on it; comment on the issue before starting so two people don't do the same work |
 
 Small fixes can go straight to a PR. For anything bigger (a new adapter, a new shell, a
