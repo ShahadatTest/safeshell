@@ -36,6 +36,9 @@ type Command struct {
 // String renders the command roughly as typed, for use in reports.
 func (c Command) String() string {
 	parts := append([]string{c.Name}, c.Args...)
+	if c.Sudo {
+		parts = append([]string{"sudo"}, parts...)
+	}
 	return strings.TrimSpace(strings.Join(parts, " "))
 }
 
@@ -99,7 +102,9 @@ func (w *walker) stmt(s *syntax.Stmt, depth int) {
 		if isForkBomb(c) {
 			w.res.ForkBomb = true
 		}
-		w.stmt(c.Body, depth)
+		if c.Body != nil {
+			w.stmt(c.Body, depth)
+		}
 	default:
 		w.children(c, depth)
 		if len(s.Redirs) > 0 {
@@ -317,6 +322,9 @@ func fetchesNetwork(s *syntax.Stmt) bool {
 }
 
 func isForkBomb(fd *syntax.FuncDecl) bool {
+	if fd.Body == nil || fd.Name == nil {
+		return false
+	}
 	name := fd.Name.Value
 	called := func(s *syntax.Stmt) bool {
 		c, ok := s.Cmd.(*syntax.CallExpr)
@@ -358,7 +366,9 @@ func wordString(w *syntax.Word) string {
 			case *syntax.DblQuoted:
 				parts(x.Parts)
 			case *syntax.ParamExp:
-				fmt.Fprintf(&sb, "$%s", x.Param.Value)
+				if x.Param != nil {
+					fmt.Fprintf(&sb, "$%s", x.Param.Value)
+				}
 			case *syntax.CmdSubst:
 				sb.WriteString("$(...)")
 			default:
