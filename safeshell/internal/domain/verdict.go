@@ -1,5 +1,4 @@
-// Package risk rates a command line by how reversible its effects are.
-package risk
+package domain
 
 import "encoding/json"
 
@@ -46,4 +45,19 @@ type Verdict struct {
 	// Unclassified lists commands the rules do not know. They are rated R1 for
 	// now; later phases hand them to the sandbox and the AI layer.
 	Unclassified []string `json:"unclassified,omitempty"`
+}
+
+// WithAlt returns f with the safer command to suggest for it.
+func (f Finding) WithAlt(cmd, note string) Finding {
+	f.Alt = &Alternative{Command: cmd, Note: note}
+	return f
+}
+
+// MaxLevel is the highest level among fs, or R0 if there are none.
+func MaxLevel(fs []Finding) Level {
+	m := R0
+	for _, f := range fs {
+		m = max(m, f.Level)
+	}
+	return m
 }

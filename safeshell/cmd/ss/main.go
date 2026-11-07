@@ -9,7 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"safeshell/internal/risk"
+	"safeshell/internal/classify"
+	"safeshell/internal/domain"
 )
 
 const usage = `SafeShell: a safety layer for your terminal.
@@ -48,7 +49,7 @@ func check(args []string) int {
 		return 2
 	}
 	line := strings.Join(args, " ")
-	v := risk.Classify(line)
+	v := classify.Classify(line)
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -57,9 +58,9 @@ func check(args []string) int {
 		report(line, v)
 	}
 	switch v.Level {
-	case risk.R4:
+	case domain.R4:
 		return 4
-	case risk.R3:
+	case domain.R3:
 		return 3
 	}
 	return 0
@@ -67,13 +68,13 @@ func check(args []string) int {
 
 var decision = [...]string{"ALLOW", "ALLOW (undo recorded)", "SIMULATE FIRST, THEN SNAPSHOT", "BLOCK (you can override)", "HARD BLOCK"}
 
-func report(line string, v risk.Verdict) {
+func report(line string, v domain.Verdict) {
 	c := newPalette(os.Stdout)
 	col := [...]string{c.green, c.green, c.yellow, c.red, c.red}[v.Level]
 	fmt.Printf("%s%s %s%s  %s\n", c.bold+col, v.Level, v.Level.Label(), c.reset, decision[v.Level])
 	fmt.Printf("%s$ %s%s\n", c.dim, line, c.reset)
 	for _, f := range v.Findings {
-		if f.Level == risk.R0 && v.Level > risk.R0 {
+		if f.Level == domain.R0 && v.Level > domain.R0 {
 			continue
 		}
 		fmt.Printf("\n  %s%s%s  %s\n", c.bold, f.Level, c.reset, f.Reason)

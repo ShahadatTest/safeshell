@@ -1,11 +1,30 @@
-package risk
+// Package classify rates a command line by how reversible its effects are.
+// It is pure: no file, process or network access.
+package classify
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 
+	"safeshell/internal/classify/rules"
+	"safeshell/internal/domain"
 	"safeshell/internal/shellparse"
+)
+
+// Local aliases keep this file readable.
+type (
+	Finding     = domain.Finding
+	Verdict     = domain.Verdict
+	Alternative = domain.Alternative
+	Level       = domain.Level
+)
+
+const (
+	R0 = domain.R0
+	R1 = domain.R1
+	R2 = domain.R2
+	R3 = domain.R3
+	R4 = domain.R4
 )
 
 // Classify rates a whole command line. The result is the highest level of any
@@ -38,7 +57,7 @@ func Classify(line string) Verdict {
 		}
 	}
 	v := Verdict{Findings: fs, Unclassified: dedupe(unclassified)}
-	v.Level = maxLevel(fs)
+	v.Level = domain.MaxLevel(fs)
 	seen := map[string]bool{}
 	for _, f := range fs {
 		if f.Alt != nil && f.Level >= R2 && !seen[f.Alt.Command] {
@@ -49,38 +68,19 @@ func Classify(line string) Verdict {
 	return v
 }
 
-func maxLevel(fs []Finding) Level {
-	m := R0
-	for _, f := range fs {
-		m = max(m, f.Level)
-	}
-	return m
-}
-
 func dedupe(ss []string) []string {
 	slices.Sort(ss)
 	return slices.Compact(ss)
 }
 
-func matches(pattern, s string) bool { return regexp.MustCompile(pattern).MatchString(s) }
-
 // commandFindings applies the rule for one command, then adds redirect and
 // privilege effects. The bool is true when the command is not in the rule table.
 func commandFindings(c shellparse.Command) ([]Finding, bool) {
 	var fs []Finding
-	unknown := false
+	var known, unknown bool
 	if c.Name != "" {
-		f := parseFlags(c.Args)
-		if r, ok := rules[c.Name]; ok {
-			fs = r(c, f)
-		} else if slices.Contains(readOnly, c.Name) {
-			fs = one(fnd(R0, c, "Only reads information."))
-		} else if slices.Contains(devTools, c.Name) {
-			fs = one(fnd(R1, c, "Runs a program or edits files; effects depend on what it is given."))
-		} else {
-			unknown = true
-			fs = one(fnd(R1, c, "Not a command SafeShell recognises yet. It will be tested in the sandbox before it runs."))
-		}
+		fs, known = rules.Rate(c)
+		unknown = !known
 	}
 	fs = append(fs, redirectFindings(c)...)
 	if c.Sudo {
@@ -107,7 +107,7 @@ func redirectFindings(c shellparse.Command) []Finding {
 		if r.Op != ">" && r.Op != ">>" && r.Op != ">|" && r.Op != "&>" && r.Op != "&>>" && r.Op != "<>" {
 			continue
 		}
-		t := normPath(r.Target)
+		t := rules.Norm(r.Target)
 		appending := strings.HasSuffix(r.Op, ">>")
 		cmd := c.String()
 		if cmd == "" {
@@ -115,21 +115,27 @@ func redirectFindings(c shellparse.Command) []Finding {
 		}
 		switch {
 		case harmlessTargets[t] || strings.HasPrefix(t, "/dev/fd/"):
-		case isBlockDevice(t) || t == "/dev/mem" || t == "/dev/kmem":
-			fs = append(fs, Finding{R4, cmd, "Writes raw data onto " + t + ", destroying what is stored there.", nil})
+		case rules.IsBlockDevice(t) || t == "/dev/mem" || t == "/dev/kmem":
+			fs = append(fs, finding(R4, cmd, "Writes raw data onto "+t+", destroying what is stored there."))
 		case strings.HasPrefix(t, "/proc/") || strings.HasPrefix(t, "/sys/"):
-			fs = append(fs, Finding{R4, cmd, "Writes to a live kernel control file (" + t + "), which can crash or reboot the machine.", nil})
-		case underSystem(t) && !appending:
-			fs = append(fs, Finding{R3, cmd, "Overwrites the system file " + t + ".", &Alternative{Command: "cp " + shq(t) + " " + shq(t) + ".bak", Note: "make a backup of the file first"}})
-		case underSystem(t):
-			fs = append(fs, Finding{R2, cmd, "Appends to the system file " + t + ".", nil})
+			fs = append(fs, finding(R4, cmd, "Writes to a live kernel control file ("+t+"), which can crash or reboot the machine."))
+		case rules.UnderSystem(t) && !appending:
+			fs = append(fs, finding(R3, cmd, "Overwrites the system file "+t+".").
+				WithAlt("cp "+rules.Shq(t)+" "+rules.Shq(t)+".bak", "make a backup of the file first"))
+		case rules.UnderSystem(t):
+			fs = append(fs, finding(R2, cmd, "Appends to the system file "+t+"."))
 		case appending:
-			fs = append(fs, Finding{R1, cmd, "Appends to " + t + ".", nil})
+			fs = append(fs, finding(R1, cmd, "Appends to "+t+"."))
 		default:
-			fs = append(fs, Finding{R2, cmd, "Overwrites " + t + " if it already exists.", &Alternative{Command: strings.Replace(cmd, r.Op+" "+r.Target, ">> "+r.Target, 1), Note: "appends instead of overwriting"}})
+			fs = append(fs, finding(R2, cmd, "Overwrites "+t+" if it already exists.").
+				WithAlt(strings.Replace(cmd, r.Op+" "+r.Target, ">> "+r.Target, 1), "appends instead of overwriting"))
 		}
 	}
 	return fs
+}
+
+func finding(l Level, cmd, reason string) Finding {
+	return Finding{Level: l, Command: cmd, Reason: reason}
 }
 
 var fetchers = map[string]bool{"curl": true, "wget": true, "fetch": true, "base64": true, "xxd": true, "openssl": true, "nc": true, "ncat": true}
@@ -139,7 +145,7 @@ var fetchers = map[string]bool{"curl": true, "wget": true, "fetch": true, "base6
 func pipelineFindings(p shellparse.Pipeline) []Finding {
 	var fs []Finding
 	for i, c := range p.Cmds {
-		if !interpreters[c.Name] || !readsStdinOrDownload(c) {
+		if !rules.IsInterpreter(c.Name) || !rules.ReadsStdin(c) {
 			continue
 		}
 		fromNet := c.Downloads || (i > 0 && fetchers[p.Cmds[i-1].Name])
@@ -150,16 +156,8 @@ func pipelineFindings(p shellparse.Pipeline) []Finding {
 		if c.Sudo {
 			lvl = R4
 		}
-		fs = append(fs, Finding{lvl, c.String(), "Downloads code and runs it immediately without you reading it. Whoever controls that server controls your machine.",
-			&Alternative{Command: "curl -fsSL URL -o script.sh && less script.sh && bash script.sh", Note: "download first, read it, then run it"}})
+		fs = append(fs, finding(lvl, c.String(), "Downloads code and runs it immediately without you reading it. Whoever controls that server controls your machine.").
+			WithAlt("curl -fsSL URL -o script.sh && less script.sh && bash script.sh", "download first, read it, then run it"))
 	}
 	return fs
-}
-
-func readsStdinOrDownload(c shellparse.Command) bool {
-	if c.Downloads {
-		return true
-	}
-	f := parseFlags(c.Args)
-	return len(f.pos) == 0 || (len(f.pos) == 1 && f.pos[0] == "-")
 }

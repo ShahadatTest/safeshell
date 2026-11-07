@@ -1,4 +1,4 @@
-package risk
+package rules
 
 import (
 	"os"
@@ -7,8 +7,8 @@ import (
 
 var systemDirs = []string{"/etc", "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/boot", "/var", "/opt", "/sys", "/proc", "/dev", "/root", "/home", "/srv", "/run"}
 
-// normPath makes common spellings of the same location comparable.
-func normPath(p string) string {
+// Norm makes common spellings of the same location comparable.
+func Norm(p string) string {
 	p = strings.ReplaceAll(p, "${HOME}", "~")
 	if strings.HasPrefix(p, "$HOME") {
 		p = "~" + strings.TrimPrefix(p, "$HOME")
@@ -25,10 +25,12 @@ func normPath(p string) string {
 	return p
 }
 
-// critical reports whether deleting or rewriting p would damage the whole
+// Critical reports whether deleting or rewriting p would damage the whole
 // system or the whole home directory, and says what p is.
-func critical(raw string) (bool, string) {
-	p := normPath(raw)
+// Critical reports whether deleting or rewriting a path would damage the whole
+// system or home directory, and says what the path is.
+func Critical(raw string) (bool, string) {
+	p := Norm(raw)
 	base := strings.TrimSuffix(p, "/*")
 	if base == "" {
 		base = "/"
@@ -50,8 +52,8 @@ func critical(raw string) (bool, string) {
 	return false, ""
 }
 
-func underSystem(raw string) bool {
-	p := normPath(raw)
+func UnderSystem(raw string) bool {
+	p := Norm(raw)
 	for _, d := range systemDirs {
 		if strings.HasPrefix(p, d+"/") && d != "/home" && d != "/dev" && d != "/run" && d != "/var" {
 			return true
@@ -62,14 +64,14 @@ func underSystem(raw string) bool {
 
 // wholeCwd reports a target that means "everything in the current directory".
 func wholeCwd(p string) bool {
-	switch normPath(p) {
+	switch Norm(p) {
 	case ".", "*", "./*", "..", "../*", ".*", "./.*":
 		return true
 	}
 	return false
 }
 
-func isBlockDevice(p string) bool {
+func IsBlockDevice(p string) bool {
 	for _, pre := range []string{"/dev/sd", "/dev/hd", "/dev/vd", "/dev/xvd", "/dev/nvme", "/dev/mmcblk", "/dev/disk", "/dev/mapper", "/dev/md", "/dev/loop"} {
 		if strings.HasPrefix(p, pre) {
 			return true
@@ -83,8 +85,8 @@ func home() string {
 	return h
 }
 
-// shq quotes s for display only if it needs it.
-func shq(s string) string {
+// Shq quotes s for display only if it needs it.
+func Shq(s string) string {
 	if s != "" && !strings.ContainsAny(s, " \t\"'$`\\!&;|<>(){}") {
 		return s
 	}
