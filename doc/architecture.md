@@ -200,7 +200,7 @@ Facts that shaped the decisions above. Re-check with `ss doctor` once it exists.
 | Fact | Result | Consequence |
 |---|---|---|
 | Kernel | 7.0.0-42-generic | OverlayFS in user namespaces (needs 5.11+) is available |
-| `kernel.apparmor_restrict_unprivileged_userns` | `1`; plain `unshare --user --map-root-user` **fails** ("Operation not permitted") | Our binary needs an AppArmor profile (D9) or it cannot create user namespaces |
+| `kernel.apparmor_restrict_unprivileged_userns` | `1`; plain `unshare --user --map-root-user` **fails**. Our own Go binary can create the namespace, but inside it **every mount is denied, even tmpfs** (spike, 2026-11-07) | Creating a namespace is not enough: our binary needs an AppArmor profile that keeps its capabilities (D9, `scripts/install-apparmor.sh`). `ss doctor` now probes with a real mount |
 | `bwrap` (bubblewrap) | 0.9.0 installed and its basic user namespace works; `--help` shows no overlay options in this version | Useful as a fallback launcher; cannot give us OverlayFS by itself here |
 | LSMs | `landlock`, `apparmor`, `bpf`, `yama` active | Landlock is available as an extra hard filesystem limit |
 | `libseccomp-dev` headers | not installed | Avoid cgo seccomp (D11) or install the package deliberately |
@@ -360,5 +360,7 @@ Phase 0 and Phase 1 are done in code; run `make check` in `safeshell/`.
 - `classify` and `classify/rules`: `classify.Classify(line)` returns a Verdict; per-tool rules live in `rules/` one file per family and are reached through `rules.Rate`. Fuzz clean (about 2.4M executions).
 - `eval`: labelled corpus `eval/corpus/commands.tsv` (231 rated rows plus 3 known-gap rows). All rated rows pass and there are no dangerous false negatives. **Caveat:** the corpus was written together with the rules, so 100 % is expected; the real measure is a held-out set written by someone who has not seen the rules (to do in Phase 7).
 - `cmd/ss`: `ss check [--json] <command>` with exit codes 0 (R0-R2), 3 (R3), 4 (R4).
-- Known gaps (kept visible in the corpus): SQL piped on stdin, code inside interpreters (`python -c`), working directory not tracked across `cd / && rm -rf *`.
+- The three Phase 1 gaps are closed: SQL and shell code on stdin (pipes from echo/printf, here-strings, here-documents), inline interpreter code (`python -c`, `perl -e`, `node -e`, `ruby -e`: destructive calls are scanned and shell strings inside are rated; anything else is R2 so the sandbox looks at it), and `cd` tracking within a line (`cd / && rm -rf *` is rated as `rm -rf /*`; subshells and conditional `cd` are handled). Script **files** (`python3 script.py`) still cannot be read by the pure classifier; they are R1 and reported as unclassified so the sandbox examines them. Corpus: 266 rows, 0 gaps.
+- `platform` + `ss doctor`: probes user namespaces (with a real mount), overlay, seccomp, Landlock, cgroup v2, root filesystem (snapshot backend).
+- `sandbox`: `Diff` reads an OverlayFS upper directory into created/modified/deleted/replaced changes (deleted directories count the files inside). The runner that creates the overlay is not written yet: it is blocked on installing the AppArmor profile.
 - All other packages under `internal/` are still empty skeletons with a `doc.go`.
