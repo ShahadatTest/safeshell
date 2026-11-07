@@ -34,7 +34,7 @@ func startBash(t *testing.T) *term {
 		t.Skip("no pty:", err)
 	}
 	c := exec.Command("bash", "--norc", "--noprofile", "-i")
-	c.Env = append(os.Environ(), "PS1=READY> ", "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
+	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	if err := c.Start(); err != nil {
