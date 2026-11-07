@@ -1,0 +1,49 @@
+// Package risk rates a command line by how reversible its effects are.
+package risk
+
+import "encoding/json"
+
+// Level is the reversibility class of a command. Higher is more dangerous.
+type Level int
+
+const (
+	R0 Level = iota // read-only
+	R1              // reversible
+	R2              // recoverable with a snapshot, or small
+	R3              // irreversible
+	R4              // catastrophic
+)
+
+var labels = [...]string{"Read-only", "Reversible", "Recoverable", "Irreversible", "Catastrophic"}
+
+func (l Level) String() string { return [...]string{"R0", "R1", "R2", "R3", "R4"}[l] }
+
+// Label is the human-readable class name.
+func (l Level) Label() string { return labels[l] }
+
+// MarshalJSON writes the level as "R3" rather than 3.
+func (l Level) MarshalJSON() ([]byte, error) { return json.Marshal(l.String()) }
+
+// Alternative is a safer command offered instead of the one typed.
+type Alternative struct {
+	Command string `json:"command"`
+	Note    string `json:"note"`
+}
+
+// Finding is one reason a command received its level.
+type Finding struct {
+	Level   Level        `json:"level"`
+	Command string       `json:"command"`
+	Reason  string       `json:"reason"`
+	Alt     *Alternative `json:"alternative,omitempty"`
+}
+
+// Verdict is the outcome of classifying a whole command line.
+type Verdict struct {
+	Level        Level         `json:"level"`
+	Findings     []Finding     `json:"findings"`
+	Alternatives []Alternative `json:"alternatives,omitempty"`
+	// Unclassified lists commands the rules do not know. They are rated R1 for
+	// now; later phases hand them to the sandbox and the AI layer.
+	Unclassified []string `json:"unclassified,omitempty"`
+}
