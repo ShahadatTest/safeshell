@@ -80,30 +80,15 @@ creates the GitHub Release with them attached.
 
 ## Why not just `apt install safeshell`?
 
-`apt` only installs packages from repositories it already knows about. Today SafeShell is only on
-GitHub Releases, so friends install the `.deb` from there. To make plain `sudo apt install safeshell`
-work for everyone, the package has to be accepted into Debian (Ubuntu copies Debian's packages
-automatically in its next release). How to submit:
+`apt` only installs from repositories it already knows. Until SafeShell is accepted into Debian
+(Ubuntu then copies it automatically), friends install the `.deb` from the Releases page.
+The full submission guide, with diagrams, a PPA shortcut and a step-by-step Debian sponsor
+process, is in **[doc/debian-ubuntu.md](doc/debian-ubuntu.md)**.
 
-1. **Pick a licence** and add a `LICENSE` file. Debian only accepts free-software licences (MIT, Apache-2.0, GPL...).
-2. **Make a proper source package.** Debian builds from source, not from our prebuilt `.deb`. Add a `debian/`
-   folder (`control`, `changelog`, `rules`, `copyright`, using `debhelper-compat` and `dh-golang`). Go dependencies
-   must already exist as Debian packages (`golang-golang-x-sys-dev` does). Look at an existing Go package in
-   the [Debian Go team](https://go-team.pages.debian.net/packaging.html) for a template.
-3. **Check it:** `lintian` must be clean; build it in a clean chroot with `sbuild` or `pbuilder`.
-4. **Announce it:** file an ITP ("Intent To Package") bug with `reportbug wnpp`.
-5. **Find a sponsor:** create an account on [mentors.debian.net](https://mentors.debian.net), upload the source
-   package, and send a "Request For Sponsorship" (RFS) to the `debian-mentors` list. A Debian Developer reviews
-   it and uploads it for you.
-6. **Wait:** after review it lands in Debian *unstable*, moves to *testing*, and the next Ubuntu release picks it
-   up. This takes months.
+## Project documents
 
-One thing reviewers will question: `ss ai setup` downloads a prebuilt `llama.cpp` engine and model at runtime.
-Debian packages must not fetch things during install, so that step is user-triggered and optional; be ready to
-explain that, or ship the AI as a separate non-free/contrib package.
-
-**Faster alternative:** a Launchpad PPA. You upload the same `debian/` source package to your own PPA and users run
-`sudo add-apt-repository ppa:<you>/safeshell && sudo apt install safeshell`. No review, works within an hour or two.
+[Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Licence (MIT)](LICENSE) ·
+[Architecture](doc/architecture.md) · [Debian/Ubuntu packaging](doc/debian-ubuntu.md)
 
 ## Team
 
