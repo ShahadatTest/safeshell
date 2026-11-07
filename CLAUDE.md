@@ -78,11 +78,11 @@ Go module `safeshell` lives in `safeshell/`; the git root is this folder. Read `
 - Before opening a PR run, from `safeshell/`: `make check`; for sandbox/hook/daemon/snapshot changes also `make build && make integration`.
 
 ## Releases
-- A release is a PR from a branch named exactly `release/vX.Y.Z` into `main`. Merging it triggers `.github/workflows/release.yml`, which tags, builds tarballs + `.deb` + `SHA256SUMS`, creates the GitHub Release, and publishes the apt repo to GitHub Pages (`gh-pages`).
+- A release is a PR from a branch named exactly `release/vX.Y.Z` into `main`. Merging it triggers `.github/workflows/release.yml`, which tags, builds tarballs + `.deb` + `SHA256SUMS`, and creates the GitHub Release with the files attached.
 - The release PR contains only release prep (docs, changelog notes, version mentions). Features land through their own PRs first.
 - Version comes from the branch name via `-X main.version`; semver. `.deb` version is the tag without `v`.
-- Users install with `curl -fsSL https://samarthsinh2660.github.io/safeshell/setup.sh | sudo sh` (adds the signed apt source, then `apt install safeshell`), or from the release tarball / `.deb`.
-- One-time repo setup (owner only): secret `APT_GPG_PRIVATE_KEY` (armored private key, no passphrase), Pages source = branch `gh-pages`, branch protection on `main` requiring the `check` job.
+- Users download the `.deb` (or tarball) from the GitHub Release. Getting into Debian/Ubuntu's own repositories is a separate, manual process described in the README.
+- One-time repo setup (owner only): branch protection on `main` requiring the `check` job. No secrets are needed.
 
 ## Architecture rules
 - Hexagonal. `internal/domain`, `classify`, `policy`, `report` are pure: no file, process, network or env access, no imports of adapters.

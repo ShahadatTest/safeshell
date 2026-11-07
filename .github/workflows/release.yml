@@ -1,7 +1,6 @@
 name: release
 # A release happens when a pull request from a branch named release/vX.Y.Z is merged into main.
-# It tags main, builds the tarballs and .deb, creates the GitHub Release, and
-# publishes the apt repository (GitHub Pages, branch gh-pages).
+# It tags main, builds the tarballs and .deb, and creates the GitHub Release.
 on:
   pull_request:
     types: [closed]
@@ -47,22 +46,3 @@ jobs:
         run: |
           gh release create "${{ steps.v.outputs.version }}" dist/*.tar.gz dist/*.deb dist/SHA256SUMS \
             --target "$MERGE_SHA" --title "SafeShell ${{ steps.v.outputs.version }}" --generate-notes
-      - name: Publish the apt repository
-        env:
-          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
-        run: |
-          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then echo "::warning::APT_GPG_PRIVATE_KEY is not set; apt repository not published"; exit 0; fi
-          sudo apt-get install -y dpkg-dev apt-utils >/dev/null
-          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
-          key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
-          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
-            git worktree add _pages origin/gh-pages
-          else
-            git worktree add --detach _pages && git -C _pages checkout --orphan gh-pages && git -C _pages rm -rf . >/dev/null
-          fi
-          safeshell/scripts/apt-repo.sh _pages safeshell/dist/safeshell_${{ steps.v.outputs.deb }}_amd64.deb "$key"
-          cp safeshell/packaging/apt/setup.sh _pages/setup.sh
-          touch _pages/.nojekyll
-          cd _pages
-          git config user.name "safeshell-release"; git config user.email "noreply@users.noreply.github.com"
-          git add -A && git commit -m "apt: safeshell ${{ steps.v.outputs.deb }}" && git push origin HEAD:gh-pages

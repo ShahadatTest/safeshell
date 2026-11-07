@@ -25,10 +25,9 @@ Linux, amd64 or arm64 (bash or zsh).
 tar -xzf safeshell-vX.Y.Z-linux-amd64.tar.gz && cd safeshell-vX.Y.Z-linux-amd64
 bash scripts/install.sh            # add --ai to also set up the built-in AI
 
-# or with apt (Ubuntu/Debian amd64): adds the signed SafeShell source, then installs
-curl -fsSL https://samarthsinh2660.github.io/safeshell/setup.sh | sudo sh
+# or the Debian/Ubuntu package (amd64): download safeshell_X.Y.Z_amd64.deb from the Releases page, then
+sudo apt install ./safeshell_X.Y.Z_amd64.deb
 ss install                         # hook your shell
-# later updates arrive with:  sudo apt update && sudo apt upgrade
 
 # or from source (needs Go)
 cd safeshell && make build && bash scripts/install.sh
@@ -76,8 +75,35 @@ Layout: pure `domain/classify/policy/report`, an `engine` with ports, adapters
 ## Contributing and releases
 
 All changes go through pull requests (rules in [CLAUDE.md](CLAUDE.md)). A release is a PR from
-`release/vX.Y.Z` into `main`; merging it tags the version, builds the tarballs and `.deb`,
-creates the GitHub Release, and updates the apt repository on GitHub Pages.
+`release/vX.Y.Z` into `main`; merging it tags the version, builds the tarballs and `.deb`, and
+creates the GitHub Release with them attached.
+
+## Why not just `apt install safeshell`?
+
+`apt` only installs packages from repositories it already knows about. Today SafeShell is only on
+GitHub Releases, so friends install the `.deb` from there. To make plain `sudo apt install safeshell`
+work for everyone, the package has to be accepted into Debian (Ubuntu copies Debian's packages
+automatically in its next release). How to submit:
+
+1. **Pick a licence** and add a `LICENSE` file. Debian only accepts free-software licences (MIT, Apache-2.0, GPL...).
+2. **Make a proper source package.** Debian builds from source, not from our prebuilt `.deb`. Add a `debian/`
+   folder (`control`, `changelog`, `rules`, `copyright`, using `debhelper-compat` and `dh-golang`). Go dependencies
+   must already exist as Debian packages (`golang-golang-x-sys-dev` does). Look at an existing Go package in
+   the [Debian Go team](https://go-team.pages.debian.net/packaging.html) for a template.
+3. **Check it:** `lintian` must be clean; build it in a clean chroot with `sbuild` or `pbuilder`.
+4. **Announce it:** file an ITP ("Intent To Package") bug with `reportbug wnpp`.
+5. **Find a sponsor:** create an account on [mentors.debian.net](https://mentors.debian.net), upload the source
+   package, and send a "Request For Sponsorship" (RFS) to the `debian-mentors` list. A Debian Developer reviews
+   it and uploads it for you.
+6. **Wait:** after review it lands in Debian *unstable*, moves to *testing*, and the next Ubuntu release picks it
+   up. This takes months.
+
+One thing reviewers will question: `ss ai setup` downloads a prebuilt `llama.cpp` engine and model at runtime.
+Debian packages must not fetch things during install, so that step is user-triggered and optional; be ready to
+explain that, or ship the AI as a separate non-free/contrib package.
+
+**Faster alternative:** a Launchpad PPA. You upload the same `debian/` source package to your own PPA and users run
+`sudo add-apt-repository ppa:<you>/safeshell && sudo apt install safeshell`. No review, works within an hour or two.
 
 ## Team
 
