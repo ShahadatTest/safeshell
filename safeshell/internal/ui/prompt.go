@@ -62,3 +62,12 @@ func Choose(in *bufio.Reader, w io.Writer, line string, d domain.Decision, alts 
 		}
 	}
 }
+
+// Proceed asks whether to run a command the assistant wrote. Enter means yes,
+// because the person has just read it and it passed the safety checks.
+func Proceed(in *bufio.Reader, w io.Writer) bool {
+	fmt.Fprint(w, "\nRun it? [Y/n] ")
+	s, err := in.ReadString('\n')
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s == "y" || s == "yes" || (s == "" && err == nil)
+}

@@ -76,6 +76,7 @@ func TestAskTranslatesThenGuards(t *testing.T) {
 	a.Level, a.Decision = domain.R0, domain.Allow
 	got := fakeAnalyze(t, a)
 	useAI(t, fakeAI{reply: `{"command":"ls -la","note":"lists everything"}`}, nil)
+	answer(t, "\n") // Enter accepts the proposal
 	code, out, errOut := runSS("ask", "show", "me", "all", "files")
 	if code != 0 || out != "ls -la\n" || !strings.Contains(errOut, "Proposed: ls -la") || got[0] != "ls -la" {
 		t.Errorf("%d %q %q %v", code, out, errOut, *got)
@@ -105,6 +106,72 @@ func TestAskErrors(t *testing.T) {
 		t.Error("usage")
 	}
 	if code, _, _ := runSS("explain"); code != 2 {
+		t.Error("usage")
+	}
+}
+
+func TestAskAnswersQuestionsWithoutRunningAnything(t *testing.T) {
+	useAI(t, fakeAI{reply: `{"command":"","answer":"Owner can do everything."}`}, nil)
+	code, out, errOut := runSS("ask", "what is chmod 755")
+	if code != 1 || out != "" || !strings.Contains(errOut, "Owner can do everything") {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+}
+
+func TestAskDeclinedProposalRunsNothing(t *testing.T) {
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R0, domain.Allow
+	fakeAnalyze(t, a)
+	useAI(t, fakeAI{reply: `{"command":"ls"}`}, nil)
+	answer(t, "n\n")
+	if code, out, _ := runSS("ask", "list"); code != 1 || out != "" {
+		t.Errorf("%d %q", code, out)
+	}
+}
+
+func TestGuardTreatsUnknownEnglishAsARequest(t *testing.T) {
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R0, domain.Allow
+	got := fakeAnalyze(t, a)
+	useAI(t, fakeAI{reply: `{"command":"du -ah . | sort -rh | head","note":"biggest first"}`}, nil)
+	answer(t, "\n")
+	code, out, _ := runSS("guard", "--unknown", "--", "show me the biggest files")
+	if code != 0 || out != "du -ah . | sort -rh | head\n" || got[0] != "du -ah . | sort -rh | head" {
+		t.Errorf("%d %q %v", code, out, *got)
+	}
+}
+
+func TestGuardKnownCommandsNeverGoToTheModel(t *testing.T) {
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R0, domain.Allow
+	fakeAnalyze(t, a)
+	useAI(t, fakeAI{err: errors.New("must not be called")}, nil)
+	if code, out, _ := runSS("guard", "--", "ls files here now"); code != 0 || out != "ls files here now\n" {
+		t.Errorf("%d %q", code, out)
+	}
+}
+
+func TestGuardLetsEnglishFallThroughWhenAIIsOff(t *testing.T) {
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R0, domain.Allow
+	fakeAnalyze(t, a)
+	useAI(t, nil, nil)
+	code, out, _ := runSS("guard", "--unknown", "--", "gti status now")
+	if code != 0 || out != "gti status now\n" {
+		t.Errorf("implicit English with AI off must reach the shell unchanged: %d %q", code, out)
+	}
+	if code, out, _ := runSS("guard", "--unknown", "--", "? list files"); code != 1 || out != "" {
+		t.Errorf("an explicit ? with AI off must say so, not run: %d %q", code, out)
+	}
+}
+
+func TestAIStatusAndUsage(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	useAI(t, nil, nil)
+	if code, out, _ := runSS("ai", "status"); code != 0 || !strings.Contains(out, "AI: off") {
+		t.Errorf("%d %q", code, out)
+	}
+	if code, _, _ := runSS("ai"); code != 2 {
 		t.Error("usage")
 	}
 }

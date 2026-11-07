@@ -42,3 +42,16 @@ func TestChoose(t *testing.T) {
 		}
 	}
 }
+
+func TestProceedDefaultsToYesButNotOnEndOfInput(t *testing.T) {
+	for in, want := range map[string]bool{"\n": true, "y\n": true, "YES\n": true, "n\n": false, "no\n": false, "x\n": false} {
+		var out strings.Builder
+		if got := Proceed(bufio.NewReader(strings.NewReader(in)), &out); got != want {
+			t.Errorf("%q: %v", in, got)
+		}
+	}
+	var out strings.Builder
+	if Proceed(bufio.NewReader(strings.NewReader("")), &out) {
+		t.Error("end of input must not run the command")
+	}
+}

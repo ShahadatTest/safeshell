@@ -1,7 +1,10 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +24,7 @@ type term struct {
 	buf    strings.Builder
 }
 
-func startBash(t *testing.T) *term {
+func startBash(t *testing.T, extraEnv ...string) *term {
 	t.Helper()
 	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
@@ -34,7 +37,7 @@ func startBash(t *testing.T) *term {
 		t.Skip("no pty:", err)
 	}
 	c := exec.Command("bash", "--norc", "--noprofile", "-i")
-	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
+	c.Env = append(append(os.Environ(), extraEnv...), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	if err := c.Start(); err != nil {
@@ -124,5 +127,64 @@ func TestShellHookStopsADangerousCommandAndLetsSafeOnesRun(t *testing.T) {
 	sh.waitFor(t, "Verified")
 	if b, err := os.ReadFile(filepath.Join(victim, "a.txt")); err != nil || string(b) != "x" {
 		t.Errorf("undo did not restore the file: %v %q", err, b)
+	}
+}
+
+// fakeModel serves Ollama's API and answers every chat with reply.
+func fakeModel(t *testing.T, reply string) (cfgDir string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"test-model"}]}`))
+			return
+		}
+		b, _ := json.Marshal(map[string]any{"message": map[string]string{"content": reply}})
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(srv.Close)
+	cfgDir = t.TempDir()
+	_ = os.MkdirAll(filepath.Join(cfgDir, "safeshell"), 0o755)
+	cfg := `{"ai":{"mode":"local","local":{"url":"` + srv.URL + `","model":"test-model"}}}`
+	_ = os.WriteFile(filepath.Join(cfgDir, "safeshell", "config.json"), []byte(cfg), 0o600)
+	return cfgDir
+}
+
+func TestTypingEnglishInTheTerminalRunsTheTranslatedCommand(t *testing.T) {
+	needSandbox(t)
+	cfg := fakeModel(t, `{"command":"echo translated-by-model","note":"prints a word"}`)
+	sh := startBash(t, "XDG_CONFIG_HOME="+cfg)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("please say something nice\r")
+	sh.waitFor(t, "Proposed: echo translated-by-model")
+	sh.waitFor(t, "Run it? [Y/n]")
+	sh.send("\r")
+	sh.waitFor(t, "translated-by-model\r\n")
+
+	// The same works with the explicit ? prefix, and a real command is untouched.
+	sh.send("? anything at all\r")
+	sh.waitFor(t, "Run it? [Y/n]")
+	sh.send("n\r")
+	sh.waitFor(t, "Nothing was run")
+	sh.send("echo plain-command\r")
+	sh.waitFor(t, "plain-command\r\n")
+}
+
+func TestADangerousTranslationIsStillStopped(t *testing.T) {
+	needSandbox(t)
+	d := t.TempDir()
+	victim := filepath.Join(d, "proj")
+	_ = os.MkdirAll(victim, 0o755)
+	_ = os.WriteFile(filepath.Join(victim, "a.txt"), []byte("x"), 0o644)
+	cfg := fakeModel(t, `{"command":"rm -rf `+victim+`","note":"removes it"}`)
+	sh := startBash(t, "XDG_CONFIG_HOME="+cfg)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("get rid of the project folder\r")
+	sh.waitFor(t, "[c] cancel")
+	sh.send("c\r")
+	sh.waitFor(t, "Nothing was run")
+	if _, err := os.Stat(filepath.Join(victim, "a.txt")); err != nil {
+		t.Fatal("the model's command ran without passing the safety check")
 	}
 }

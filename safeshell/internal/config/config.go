@@ -11,7 +11,7 @@ import (
 	"safeshell/internal/ai"
 )
 
-// Config holds every setting. The zero value is valid: AI off.
+// Config holds every setting. The zero value is valid: AI on when Ollama is installed.
 type Config struct {
 	AI struct {
 		Mode  ai.Mode `json:"mode"` // off, local, cloud, hybrid
@@ -52,10 +52,10 @@ func Load(path string) (Config, error) {
 	}
 	switch c.AI.Mode {
 	case "":
-		c.AI.Mode = ai.Off
-	case ai.Off, ai.Local, ai.Cloud, ai.Hybrid:
+		c.AI.Mode = ai.Auto
+	case ai.Auto, ai.Off, ai.Local, ai.Cloud, ai.Hybrid:
 	default:
-		return Config{}, errors.New("ai.mode must be off, local, cloud or hybrid, not " + string(c.AI.Mode))
+		return Config{}, errors.New("ai.mode must be auto, off, local, cloud or hybrid, not " + string(c.AI.Mode))
 	}
 	if c.AI.Local.Model == "" {
 		c.AI.Local.Model = "qwen2.5-coder:3b"

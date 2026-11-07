@@ -23,6 +23,7 @@ type Backend interface {
 type Mode string
 
 const (
+	Auto   Mode = "auto" // the default: local when Ollama is installed, otherwise off
 	Off    Mode = "off"
 	Local  Mode = "local"  // on this machine; nothing leaves it
 	Cloud  Mode = "cloud"  // a hosted model; the command text is sent (paths redacted)

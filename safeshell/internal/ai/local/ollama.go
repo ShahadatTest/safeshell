@@ -22,12 +22,15 @@ type Ollama struct {
 func (o Ollama) Name() string { return "local:" + o.Model }
 
 func (o Ollama) Complete(ctx context.Context, system, user string) (string, error) {
-	base := strings.TrimRight(o.URL, "/")
-	if base == "" {
-		base = "http://127.0.0.1:11434"
+	if err := o.EnsureServer(ctx); err != nil {
+		return "", err
 	}
+	if have, err := o.Models(ctx); err == nil && !HasModel(have, o.Model) {
+		return "", fmt.Errorf("the model %s is not downloaded yet: run  ss ai setup", o.Model)
+	}
+	base := o.base()
 	body, _ := json.Marshal(map[string]any{
-		"model": o.Model, "stream": false, "options": map[string]any{"temperature": 0},
+		"model": o.Model, "stream": false, "keep_alive": "30m", "options": map[string]any{"temperature": 0},
 		"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": user}},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/chat", bytes.NewReader(body))

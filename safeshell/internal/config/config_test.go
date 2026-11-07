@@ -16,7 +16,7 @@ func write(t *testing.T, s string) string {
 
 func TestDefaultsWhenMissing(t *testing.T) {
 	c, err := Load(filepath.Join(t.TempDir(), "none.json"))
-	if err != nil || c.AI.Mode != ai.Off || c.AI.Local.Model == "" {
+	if err != nil || c.AI.Mode != ai.Auto || c.AI.Local.Model == "" {
 		t.Errorf("%+v %v", c, err)
 	}
 }

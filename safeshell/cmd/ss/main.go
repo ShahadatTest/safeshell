@@ -40,7 +40,8 @@ Usage:
                                    what the shell hook runs: analyse, ask, print the command to run
   ss explain <command...>          the analysis plus a plain-English explanation (needs AI)
   ss ask <what you want in English>
-                                   AI proposes a command; it is checked like any other (needs AI)
+                                   AI proposes a command; it is checked like any other
+  ss ai setup|status               download the built-in model (once) / show AI state
   ss undo [ID]                     put back what the last approved command changed, and verify it
   ss snapshots                     list saved snapshots
   ss hook bash|zsh                 print the shell hook; add  eval "$(ss hook bash)"  to your rc file
@@ -75,6 +76,8 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 		return runSimulate(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr, color)
+	case "ai":
+		return runAI(args[1:], stdout, stderr)
 	case "ask":
 		return runAsk(args[1:], stdout, stderr, color)
 	case "undo":

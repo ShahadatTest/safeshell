@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,10 @@ import (
 func TestOllamaSendsChatAndReturnsContent(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Write([]byte(`{"models":[{"name":"qwen"},{"name":"x"}]}`))
+			return
+		}
 		if r.URL.Path != "/api/chat" {
 			t.Errorf("path %s", r.URL.Path)
 		}
@@ -30,6 +35,10 @@ func TestOllamaSendsChatAndReturnsContent(t *testing.T) {
 
 func TestOllamaErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Write([]byte(`{"models":[{"name":"x"}]}`))
+			return
+		}
 		if r.URL.Query().Get("empty") != "" {
 			w.Write([]byte(`{}`))
 			return
@@ -43,7 +52,10 @@ func TestOllamaErrors(t *testing.T) {
 	if _, err := (Ollama{URL: srv.URL + "/?empty=1", Model: "x"}).Complete(context.Background(), "", ""); err == nil {
 		t.Error("empty reply")
 	}
-	if _, err := (Ollama{URL: "http://127.0.0.1:1", Model: "x"}).Complete(context.Background(), "", ""); err == nil || !strings.Contains(err.Error(), "not reachable") {
+	old := Starter
+	defer func() { Starter = old }()
+	Starter = func() error { return errors.New("Ollama is not installed") }
+	if _, err := (Ollama{URL: "http://127.0.0.1:1", Model: "x"}).Complete(context.Background(), "", ""); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Errorf("%v", err)
 	}
 }

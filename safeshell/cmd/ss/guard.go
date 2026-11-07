@@ -12,6 +12,7 @@ import (
 	"safeshell/internal/audit"
 	"safeshell/internal/domain"
 	"safeshell/internal/engine"
+	"safeshell/internal/nl"
 	"safeshell/internal/shellhook"
 	"safeshell/internal/ui"
 )
@@ -28,13 +29,15 @@ var guardInput = func() io.Reader {
 // run goes to stdout (the original, or a safer option the person picked); the
 // analysis and questions go to stderr. Exit 0 runs it, 1 cancels.
 func runGuard(args []string, stdout, stderr io.Writer, color bool) int {
-	cwd := ""
+	cwd, unknown := "", false
 opts:
 	for len(args) > 0 {
 		switch {
 		case args[0] == "--":
 			args = args[1:]
 			break opts
+		case args[0] == "--unknown":
+			unknown, args = true, args[1:]
 		case args[0] == "--cwd" && len(args) >= 2:
 			cwd, args = args[1], args[2:]
 		case strings.HasPrefix(args[0], "-"):
@@ -51,17 +54,34 @@ opts:
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	return guardLine(strings.Join(args, " "), cwd, stdout, stderr, color)
+	line := strings.Join(args, " ")
+	// A line the shell would reject as "command not found", or one starting with ?, may be English.
+	if text, ok := nl.LooksLikeRequest(line, !unknown); ok {
+		code, available := askLine(text, cwd, stdout, stderr, color)
+		if available || strings.HasPrefix(strings.TrimSpace(line), "?") {
+			return code
+		}
+		// Not English after all, or no AI: let the shell handle the line as typed.
+		fmt.Fprintln(stdout, line)
+		return 0
+	}
+	return guardLine(line, cwd, stdout, stderr, color, false)
 }
 
 // guardLine analyses one command line, asks if needed, and prints what to run.
-func guardLine(line, cwd string, stdout, stderr io.Writer, color bool) int {
+func guardLine(line, cwd string, stdout, stderr io.Writer, color bool, proposed bool) int {
 	a := analyze(context.Background(), line, cwd)
 	aiReview(&a, stderr)
 	if a.Decision != domain.Allow {
 		printAnalysis(stderr, a, color)
 	}
-	cmd, ok := ui.Choose(bufio.NewReader(guardInput()), stderr, line, a.Decision, a.Verdict.Alternatives)
+	in := bufio.NewReader(guardInput())
+	cmd, ok := line, true
+	if proposed && a.Decision == domain.Allow {
+		ok = ui.Proceed(in, stderr) // the assistant wrote it, so the person always sees it first
+	} else {
+		cmd, ok = ui.Choose(in, stderr, line, a.Decision, a.Verdict.Alternatives)
+	}
 	record(a, cmd, ok)
 	if ok && cmd == line { // a replacement command has different effects, so the saved files do not apply
 		if note := protect(a); note != "" {
