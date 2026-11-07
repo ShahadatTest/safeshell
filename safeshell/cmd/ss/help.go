@@ -66,6 +66,7 @@ be restored exactly, it tells you instead of claiming success.`},
    ss ai setup|status|stop    manage the built-in AI
    ss install / ss uninstall  add or remove the hook in your shell startup file
    ss hook bash|zsh           print the shell hook
+   ss version                 which release this is
    ss doctor                  what this machine supports (sandbox, AI, snapshots)
    Inside your terminal:  /models   /help`},
 	{"privacy", "What leaves your machine", `Local mode: nothing. The model runs on your computer; the only download is the model itself.

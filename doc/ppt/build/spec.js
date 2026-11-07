@@ -312,7 +312,7 @@ slides.push({
 
 // 13 Results
 const built = ['Foundation', 'Sandbox', 'Shell hook', 'AI layer', 'Undo', 'English input'];
-const measured = [['92%', 'of 220 commands rated exactly, by an independent test set'], ['88%', 'of 43 plain-English requests turned into the right command'], ['0.5 s', 'to translate a request once the local model is loaded'], ['339', 'automated tests, incl. a real terminal and the real kernel']];
+const measured = [['92%', 'of 220 commands rated exactly, by an independent test set'], ['97%', 'of 43 plain-English requests turned into the right command (local Qwen 3B; Gemini 95-100%)'], ['0.5 s', 'to translate a request once the local model is loaded'], ['339', 'automated tests, incl. a real terminal and the real kernel']];
 slides.push({
   notes: 'All six build phases are working. We measured the project. A held-out set of 220 commands, labelled by someone who had not seen our rules, is rated exactly 92 percent of the time, and every miss but one is within one level. We first scored 77 percent on it, then fixed the real gaps it exposed. On 43 plain-English requests the local Qwen 3B model produced a correct command 88 percent of the time, and its failures were fixed. 339 automated tests pass, including tests in a real terminal and against the real Linux kernel.',
   els: [

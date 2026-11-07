@@ -26,6 +26,9 @@ var (
 	simulate = overlayfs.Run
 )
 
+// version is stamped at build time: -ldflags "-X main.version=v1.2.3".
+var version = "dev"
+
 const usage = `SafeShell: a safety layer for your terminal.
 
 Usage:
@@ -48,6 +51,7 @@ Usage:
   ss install [--ai]                add the hook to your shell startup file (and set up the AI)
   ss uninstall                     remove the hook
   ss hook bash|zsh                 print the shell hook; add  eval "$(ss hook bash)"  to your rc file
+  ss version                       which release this is
   ss doctor                        show what this machine allows (sandbox, snapshots, AI)
 
 Quote the command so your shell passes it through untouched:
@@ -104,6 +108,9 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 		return runGuard(args[1:], stdout, stderr, color)
 	case "hook":
 		return runHook(args[1:], stdout, stderr)
+	case "version", "--version":
+		fmt.Fprintln(stdout, "ss", version)
+		return 0
 	case "doctor":
 		code := doctor(stdout, probe())
 		doctorAI(stdout)

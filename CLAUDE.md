@@ -63,3 +63,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+# SafeShell project specifics
+
+Go module `safeshell` lives in `safeshell/` (git root is this folder). See `README.md` and `doc/architecture.md`.
+
+- **Check before commit:** from `safeshell/`: `make check`; for sandbox/hook/daemon changes also `make build && make integration`. `SS_SWEEP=1 go test ./test/integration -run Sweep` runs all labelled commands through the real binary.
+- **Architecture rules:** `domain/classify/policy/report` stay pure (no I/O). `engine` talks to adapters only through consumer-side ports; `cmd/ss` is the only composition root. Effects and the AI can only raise a risk level, never lower it.
+- **Classifier changes:** update `eval/corpus` (dev) and keep `eval/heldout` independent; `TestHeldoutReport` enforces accuracy floors.
+- **AI changes:** `ss ai bench` (43 requests, fixed `eval.BenchEnv`) measures accuracy; cloud results vary run to run (about 95-100% for Gemini flash-lite).
+- **Secrets:** never write API keys to the repo, config, tests or logs. Live tests pass keys via env vars only (`GEMINI_API_KEY` etc.).
+- **Commits:** short conventional messages, no co-author lines, fewer bigger commits, never push unless asked. Don't rewrite history without approval.
+- **Releases:** tag `vX.Y.Z` and push; `.github/workflows/release.yml` publishes. Version comes from `-X main.version`.
+- **Don't** run downloaded binaries (llama-server) or bypass permission denials without the user's approval.
