@@ -18,7 +18,8 @@ var readOnly = strings.Fields(`ls ll la dir cat less more head tail wc grep egre
 which type whereis file stat df du free uptime ps top htop printenv tree diff cmp sort uniq cut tr jq yq basename dirname realpath
 readlink lsblk lscpu lsusb lspci lsof man help history true false test [ sleep clear export alias unalias set unset read
 env nproc md5sum sha1sum sha256sum cksum column paste comm join fold nl rev tac seq yes xxd hexdump od strings
-ping traceroute dig nslookup host ifconfig ip ss netstat journalctl dmesg locate fd ncdu trash-list`)
+ping traceroute dig nslookup host ifconfig ip ss netstat journalctl dmesg locate fd ncdu trash-list
+safeshell`) // SafeShell itself: it must never snapshot or sandbox its own undo
 
 // devTools run project code, or edit files in ways the command line alone does not reveal.
 var devTools = strings.Fields(`make cmake cargo go npm npx yarn pnpm node python python3 ruby gem gcc g++ cc clang rustc javac java mvn gradle
