@@ -1,5 +1,5 @@
-safeshell (1.0.0-1) UNRELEASED; urgency=medium
+safeshell (1.0.0-1) unstable; urgency=medium
 
-  * Initial release. (Closes: #ITP-BUG-NUMBER)
+  * Initial release. (Closes: #1153343)
 
- -- samarthsinh2660 <rajuvala80@gmail.com>  Sat, 07 Nov 2026 12:00:00 +0530
+ -- samarthsinh2660 <rajuvala80@gmail.com>  Sat, 07 Nov 2026 19:11:35 +0530
