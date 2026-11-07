@@ -55,19 +55,30 @@ sits between you and the shell and answers one question first: **can this be und
 
 Linux, amd64 or arm64, bash or zsh.
 
-**Debian / Ubuntu**: download `safeshell_X.Y.Z_amd64.deb` from the [latest release](https://github.com/samarthsinh2660/safeshell/releases/latest), then:
+**Debian / Ubuntu (amd64):**
 
 ```bash
-sudo apt install ./safeshell_X.Y.Z_amd64.deb
+wget https://github.com/samarthsinh2660/safeshell/releases/download/v1.0.0/safeshell_1.0.0_amd64.deb
+sudo apt install ./safeshell_1.0.0_amd64.deb
 safeshell install          # adds the hook to your shell
 ```
 
-**Any Linux**: download the tarball from the release page:
+**Newest Ubuntu (series `stonking` or later), from the PPA** (updates arrive with `apt upgrade`):
 
 ```bash
-tar -xzf safeshell-vX.Y.Z-linux-amd64.tar.gz && cd safeshell-vX.Y.Z-linux-amd64
+sudo add-apt-repository ppa:samarthsinh/safeshell
+sudo apt install safeshell
+```
+
+**Any Linux (amd64 or arm64):**
+
+```bash
+wget https://github.com/samarthsinh2660/safeshell/releases/download/v1.0.0/safeshell-v1.0.0-linux-amd64.tar.gz
+tar -xzf safeshell-v1.0.0-linux-amd64.tar.gz && cd safeshell-v1.0.0-linux-amd64
 bash scripts/install.sh    # add --ai to also set up the built-in AI
 ```
+
+Checksums for every file are in `SHA256SUMS` on the [release page](https://github.com/samarthsinh2660/safeshell/releases/latest).
 
 **From source** (needs Go):
 
