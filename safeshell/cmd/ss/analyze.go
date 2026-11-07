@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"safeshell/internal/domain"
 	"safeshell/internal/engine"
@@ -19,7 +21,7 @@ import (
 
 // analyze is replaced in tests.
 var analyze = func(ctx context.Context, line, cwd string) engine.Analysis {
-	e := &engine.Engine{Sim: realSandbox{}, Inspectors: []engine.Inspector{inspectProcesses, inspectDisks}}
+	e := &engine.Engine{Sim: realSandbox{}, Inspectors: []engine.Inspector{inspectProcesses, inspectDisks, inspectPackages, inspectServices}}
 	return e.Analyze(ctx, line, cwd)
 }
 
@@ -40,6 +42,24 @@ func inspectProcesses(cmds []shellparse.Command) []domain.Effect {
 func inspectDisks(cmds []shellparse.Command) []domain.Effect {
 	mi, _ := os.ReadFile("/proc/self/mountinfo")
 	return effects.InspectDisks(effects.SysFS{Dev: "/dev", Sys: "/sys", Mountinfo: string(mi)}, cmds)
+}
+
+// realRunner runs a read-only program with a short timeout and a plain locale.
+func realRunner(name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func inspectPackages(cmds []shellparse.Command) []domain.Effect {
+	return effects.PreviewPackages(realRunner, cmds)
+}
+
+func inspectServices(cmds []shellparse.Command) []domain.Effect {
+	return effects.InspectServices(realRunner, cmds)
 }
 
 func runAnalyze(args []string, stdout, stderr io.Writer, color bool) int {

@@ -420,3 +420,30 @@ func TestResourceLimitsApplyToTheCommand(t *testing.T) {
 		t.Error("write reached the real /tmp")
 	}
 }
+
+func TestAnalyzeAsksAptWhatARemovalWouldTake(t *testing.T) {
+	needSandbox(t)
+	if exec.Command("dpkg", "-s", "gnome-shell").Run() != nil {
+		t.Skip("gnome-shell is not installed here")
+	}
+	a := analyze(t, "apt remove -y gnome-shell")
+	e, ok := a.effect("packages")
+	if !ok || e.Evidence != "PREVIEWED" || !strings.Contains(e.Summary, "gnome-shell") {
+		t.Fatalf("package effect: %+v", e)
+	}
+	if a.Level != "R4" || a.Decision != "hard-block" {
+		t.Errorf("removing the desktop must be a hard block, got %s %s", a.Level, a.Decision)
+	}
+}
+
+func TestAnalyzeListsWhatDependsOnAServiceBeingStopped(t *testing.T) {
+	needSandbox(t)
+	a := analyze(t, "systemctl stop dbus")
+	e, ok := a.effect("services")
+	if !ok || e.Evidence != "INSPECTED" || !strings.Contains(strings.Join(e.Details, "\n"), "message bus") {
+		t.Fatalf("service effect: %+v", e)
+	}
+	if a.Level != "R3" {
+		t.Errorf("stopping dbus must be at least irreversible, got %s", a.Level)
+	}
+}
