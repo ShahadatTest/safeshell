@@ -7,8 +7,11 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
+	"safeshell/internal/audit"
 	"safeshell/internal/domain"
+	"safeshell/internal/engine"
 	"safeshell/internal/shellhook"
 	"safeshell/internal/ui"
 )
@@ -54,6 +57,7 @@ opts:
 		printAnalysis(stderr, a, color)
 	}
 	cmd, ok := ui.Choose(bufio.NewReader(guardInput()), stderr, line, a.Decision, a.Verdict.Alternatives)
+	record(a, cmd, ok)
 	if !ok {
 		fmt.Fprintln(stderr, "Cancelled. Nothing was run.")
 		return 1
@@ -74,4 +78,20 @@ func runHook(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprint(stdout, s)
 	return 0
+}
+
+// auditPath is where decisions are logged; tests replace it.
+var auditPath = audit.DefaultPath
+
+func record(a engine.Analysis, cmd string, ran bool) {
+	e := audit.Entry{Time: time.Now().UTC(), Line: a.Line, Level: a.Level.String(), Decision: a.Decision.String(), Outcome: "cancelled"}
+	switch {
+	case ran && a.Decision == domain.Allow:
+		e.Outcome = "allowed"
+	case ran && cmd != a.Line:
+		e.Outcome, e.Run = "replaced", cmd
+	case ran:
+		e.Outcome = "ran"
+	}
+	_ = audit.Append(auditPath(), e) // a full disk must not stop a command
 }

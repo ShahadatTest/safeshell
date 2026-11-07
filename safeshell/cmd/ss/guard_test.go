@@ -1,7 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
+	"safeshell/internal/audit"
 	"strings"
 	"testing"
 
@@ -80,5 +84,50 @@ func TestHookPrintsScript(t *testing.T) {
 	}
 	if _, out, _ := runSS("hook", "zsh"); !strings.Contains(out, "zle -N accept-line") {
 		t.Errorf("zsh: %q", out)
+	}
+}
+
+func TestMain(m *testing.M) { // never write the real audit log from tests
+	d, _ := os.MkdirTemp("", "ss-audit")
+	auditPath = func() string { return filepath.Join(d, "audit.jsonl") }
+	code := m.Run()
+	os.RemoveAll(d)
+	os.Exit(code)
+}
+
+func lastAudit(t *testing.T) audit.Entry {
+	t.Helper()
+	b, err := os.ReadFile(auditPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls := strings.Split(strings.TrimSpace(string(b)), "\n")
+	var e audit.Entry
+	if err := json.Unmarshal([]byte(ls[len(ls)-1]), &e); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func TestGuardLogsEveryOutcome(t *testing.T) {
+	for _, tc := range []struct{ in, outcome, run string }{
+		{"c\n", "cancelled", ""},
+		{"1\n", "replaced", "trash-put ~/projects"},
+		{"d\nyes\n", "ran", ""},
+	} {
+		fakeAnalyze(t, sampleAnalysis())
+		answer(t, tc.in)
+		runSS("guard", "--", "rm -rf ~/projects")
+		e := lastAudit(t)
+		if e.Outcome != tc.outcome || e.Run != tc.run || e.Level != "R3" || e.Decision != "block" || e.Line != "rm -rf ~/projects" {
+			t.Errorf("%q: %+v", tc.in, e)
+		}
+	}
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R0, domain.Allow
+	fakeAnalyze(t, a)
+	runSS("guard", "--", "ls")
+	if e := lastAudit(t); e.Outcome != "allowed" {
+		t.Errorf("%+v", e)
 	}
 }
