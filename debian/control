@@ -1,7 +1,7 @@
 Source: safeshell
 Section: utils
 Priority: optional
-Maintainer: Samarth Vala <rajuvala80@gmail.com>
+Maintainer: samarthsinh2660 <rajuvala80@gmail.com>
 Build-Depends: debhelper-compat (= 13),
                dh-golang,
                golang-any (>= 2:1.26~),
