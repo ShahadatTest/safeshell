@@ -13,6 +13,12 @@ jobs:
           go-version-file: go.mod
       - name: Vet, format, race-detector tests, cross-architecture vet
         run: make check
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
       - name: Short fuzz runs
         run: make fuzz FUZZTIME=15s
       # The sandbox needs user namespaces, which GitHub's runners restrict under
