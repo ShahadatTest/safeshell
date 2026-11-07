@@ -69,3 +69,39 @@ func TestFormatHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestFileEffect(t *testing.T) {
+	e := FileEffect(diff(
+		sandbox.Change{Path: "home/me/p", Kind: sandbox.Deleted, IsDir: true, Files: 4312, Bytes: 2 << 30, Notable: []string{"p/.git"}},
+		sandbox.Change{Path: "tmp/n", Kind: sandbox.Created, Files: 1},
+	))
+	if e.Evidence != domain.Observed || e.Kind != domain.EffectFS || e.MinLevel != domain.R3 {
+		t.Errorf("%+v", e)
+	}
+	if !strings.Contains(e.Summary, "delete 4,312 files (2.0 GiB)") || !strings.Contains(e.Summary, "create 1 file") {
+		t.Errorf("summary: %s", e.Summary)
+	}
+	joined := strings.Join(e.Details, "\n")
+	for _, want := range []string{"because it deletes 4312 files", "deleted /home/me/p/ (4,312 files)", "created /tmp/n"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("details missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+func TestFileEffectEmptyAndTruncatedAndLong(t *testing.T) {
+	if e := FileEffect(diff()); e.Summary != "changes no files" || e.MinLevel != domain.R0 {
+		t.Errorf("%+v", e)
+	}
+	if e := FileEffect(sandbox.FileDiff{Truncated: true, Changes: []sandbox.Change{{Path: "x", Kind: sandbox.Deleted, Files: 500000, IsDir: true}}}); !strings.Contains(e.Summary, "counting stopped") {
+		t.Errorf("%s", e.Summary)
+	}
+	var cs []sandbox.Change
+	for i := 0; i < 12; i++ {
+		cs = append(cs, sandbox.Change{Path: "f", Kind: sandbox.Created, Files: 1})
+	}
+	e := FileEffect(diff(cs...))
+	if last := e.Details[len(e.Details)-1]; last != "... and 4 more changes" {
+		t.Errorf("long lists are cut: %q", last)
+	}
+}
