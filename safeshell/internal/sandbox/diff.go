@@ -29,6 +29,9 @@ type Change struct {
 	IsDir bool
 	Files int   // files affected (1 for a plain file)
 	Bytes int64 // bytes in those files
+	// Notable lists up to five paths inside a deleted or replaced tree that look
+	// important (git history, keys, databases, documents).
+	Notable []string
 }
 
 // FileDiff is the observed effect of a command on the filesystem.
@@ -162,13 +165,16 @@ func Diff(upper, lower string, opt Options) (FileDiff, error) {
 // whether it stopped early.
 func count(root string, max int, c *Change) (truncated bool) {
 	seen := 0
-	_ = filepath.WalkDir(root, func(_ string, e fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if seen++; seen > max {
 			truncated = true
 			return fs.SkipAll
+		}
+		if rel, _ := filepath.Rel(root, p); len(c.Notable) < 5 && IsNotable(rel) {
+			c.Notable = append(c.Notable, filepath.Join(filepath.Base(root), rel))
 		}
 		if !e.IsDir() {
 			c.Files++
