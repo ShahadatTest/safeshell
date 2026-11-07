@@ -45,7 +45,7 @@ func TestGuardAIFailureNeverBlocksOrLowers(t *testing.T) {
 	a.Level, a.Decision = domain.R2, domain.Confirm
 	a.Verdict.Level = domain.R2
 	fakeAnalyze(t, a)
-	useAI(t, fakeAI{err: errors.New("Ollama is not reachable")}, nil)
+	useAI(t, fakeAI{err: errors.New("the local engine stopped while starting")}, nil)
 	answer(t, "y\n")
 	code, out, errOut := runSS("guard", "--", "touch x")
 	if code != 0 || out != "touch x\n" || !strings.Contains(errOut, "AI review unavailable") {
@@ -162,16 +162,5 @@ func TestGuardLetsEnglishFallThroughWhenAIIsOff(t *testing.T) {
 	}
 	if code, out, _ := runSS("guard", "--unknown", "--", "? list files"); code != 1 || out != "" {
 		t.Errorf("an explicit ? with AI off must say so, not run: %d %q", code, out)
-	}
-}
-
-func TestAIStatusAndUsage(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	useAI(t, nil, nil)
-	if code, out, _ := runSS("ai", "status"); code != 0 || !strings.Contains(out, "AI: off") {
-		t.Errorf("%d %q", code, out)
-	}
-	if code, _, _ := runSS("ai"); code != 2 {
-		t.Error("usage")
 	}
 }

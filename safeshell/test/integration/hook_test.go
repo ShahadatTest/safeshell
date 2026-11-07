@@ -1,10 +1,7 @@
 package integration
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +34,8 @@ func startBash(t *testing.T, extraEnv ...string) *term {
 		t.Skip("no pty:", err)
 	}
 	c := exec.Command("bash", "--norc", "--noprofile", "-i")
-	c.Env = append(append(os.Environ(), extraEnv...), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
+	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
+	c.Env = append(c.Env, extraEnv...) // last, so a test can point the shell at its own folders
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	if err := c.Start(); err != nil {
@@ -130,29 +128,41 @@ func TestShellHookStopsADangerousCommandAndLetsSafeOnesRun(t *testing.T) {
 	}
 }
 
-// fakeModel serves Ollama's API and answers every chat with reply.
-func fakeModel(t *testing.T, reply string) (cfgDir string) {
+// fakeModel installs a stand-in llama-server and a sparse model file where
+// SafeShell looks for them, so the whole local path (find engine, start it,
+// wait for health, chat) runs for real. It returns the environment to use.
+func fakeModel(t *testing.T, reply string) []string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/tags" {
-			_, _ = w.Write([]byte(`{"models":[{"name":"test-model"}]}`))
-			return
-		}
-		b, _ := json.Marshal(map[string]any{"message": map[string]string{"content": reply}})
-		_, _ = w.Write(b)
-	}))
-	t.Cleanup(srv.Close)
-	cfgDir = t.TempDir()
-	_ = os.MkdirAll(filepath.Join(cfgDir, "safeshell"), 0o755)
-	cfg := `{"ai":{"mode":"local","local":{"url":"` + srv.URL + `","model":"test-model"}}}`
-	_ = os.WriteFile(filepath.Join(cfgDir, "safeshell", "config.json"), []byte(cfg), 0o600)
-	return cfgDir
+	data, cfg, state := t.TempDir(), t.TempDir(), t.TempDir()
+	engine := filepath.Join(data, "safeshell", "engine", "b11429-cpu")
+	_ = os.MkdirAll(engine, 0o755)
+	build := exec.Command("go", "build", "-o", filepath.Join(engine, "llama-server"), "./fakellama")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build fake engine: %v\n%s", err, out)
+	}
+	_ = os.MkdirAll(filepath.Join(data, "safeshell", "models"), 0o755)
+	model := filepath.Join(data, "safeshell", "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	if err := os.WriteFile(model, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(model, 1117320768); err != nil { // the catalog size; sparse, so it costs no disk
+		t.Fatal(err)
+	}
+	_ = os.MkdirAll(filepath.Join(cfg, "safeshell"), 0o755)
+	_ = os.WriteFile(filepath.Join(cfg, "safeshell", "config.json"),
+		[]byte(`{"ai":{"mode":"local","local":{"model":"qwen2.5-coder-1.5b","gpu":"off"}}}`), 0o600)
+	env := []string{"XDG_DATA_HOME=" + data, "XDG_CONFIG_HOME=" + cfg, "XDG_STATE_HOME=" + state, "FAKE_REPLY=" + reply}
+	t.Cleanup(func() {
+		c := exec.Command(ssBin, "ai", "stop")
+		c.Env = append(os.Environ(), env...)
+		_ = c.Run()
+	})
+	return env
 }
 
 func TestTypingEnglishInTheTerminalRunsTheTranslatedCommand(t *testing.T) {
 	needSandbox(t)
-	cfg := fakeModel(t, `{"command":"echo translated-by-model","note":"prints a word"}`)
-	sh := startBash(t, "XDG_CONFIG_HOME="+cfg)
+	sh := startBash(t, fakeModel(t, `{"command":"echo translated-by-model","note":"prints a word"}`)...)
 	sh.waitFor(t, "READY>")
 	sh.send(`eval "$(ss hook bash)"` + "\r")
 	sh.send("please say something nice\r")
@@ -176,8 +186,7 @@ func TestADangerousTranslationIsStillStopped(t *testing.T) {
 	victim := filepath.Join(d, "proj")
 	_ = os.MkdirAll(victim, 0o755)
 	_ = os.WriteFile(filepath.Join(victim, "a.txt"), []byte("x"), 0o644)
-	cfg := fakeModel(t, `{"command":"rm -rf `+victim+`","note":"removes it"}`)
-	sh := startBash(t, "XDG_CONFIG_HOME="+cfg)
+	sh := startBash(t, fakeModel(t, `{"command":"rm -rf `+victim+`","note":"removes it"}`)...)
 	sh.waitFor(t, "READY>")
 	sh.send(`eval "$(ss hook bash)"` + "\r")
 	sh.send("get rid of the project folder\r")
@@ -187,4 +196,20 @@ func TestADangerousTranslationIsStillStopped(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(victim, "a.txt")); err != nil {
 		t.Fatal("the model's command ran without passing the safety check")
 	}
+}
+
+func TestSlashCommandsWorkInsideTheTerminal(t *testing.T) {
+	needSandbox(t)
+	sh := startBash(t, fakeModel(t, `{"command":"true"}`)...)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("/help start\r")
+	sh.waitFor(t, "Get started in two minutes")
+	sh.send("/models\r")
+	sh.waitFor(t, "SafeShell AI models")
+	sh.waitFor(t, "Gemini")
+	sh.send("q\r")
+	sh.waitFor(t, "READY>")
+	sh.send("echo still-works\r")
+	sh.waitFor(t, "still-works\r\n")
 }

@@ -55,6 +55,9 @@ opts:
 		cwd, _ = os.Getwd()
 	}
 	line := strings.Join(args, " ")
+	if code, ok := slashCommand(line, stderr); ok {
+		return code
+	}
 	// A line the shell would reject as "command not found", or one starting with ?, may be English.
 	if text, ok := nl.LooksLikeRequest(line, !unknown); ok {
 		code, available := askLine(text, cwd, stdout, stderr, color)
@@ -124,4 +127,22 @@ func record(a engine.Analysis, cmd string, ran bool) {
 		e.Outcome = "ran"
 	}
 	_ = audit.Append(auditPath(), e) // a full disk must not stop a command
+}
+
+// slashCommand handles lines like /models typed at the prompt. They open a
+// menu or a guide and never run anything, so the exit code is always "cancel".
+func slashCommand(line string, w io.Writer) (code int, ok bool) {
+	f := strings.Fields(line)
+	if len(f) == 0 || !strings.HasPrefix(f[0], "/") {
+		return 0, false
+	}
+	switch f[0] {
+	case "/models":
+		runModels(guardInput(), w)
+	case "/help":
+		runHelp(f[1:], w)
+	default:
+		return 0, false
+	}
+	return 1, true
 }

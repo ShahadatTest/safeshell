@@ -1,0 +1,30 @@
+// Command fakellama stands in for llama-server in tests: /health and an
+// OpenAI-style /v1/chat/completions that always answers with $FAKE_REPLY.
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	port := flag.Int("port", 0, "")
+	flag.String("m", "", "")
+	flag.String("host", "", "")
+	flag.String("c", "", "")
+	flag.String("parallel", "", "")
+	flag.Bool("no-webui", false, "")
+	flag.String("sleep-idle-seconds", "", "")
+	flag.String("ngl", "", "")
+	flag.Parse()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"status":"ok"}`)) })
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": os.Getenv("FAKE_REPLY")}}}})
+		w.Write(b)
+	})
+	_ = http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", *port), mux)
+}

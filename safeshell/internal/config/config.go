@@ -1,4 +1,4 @@
-// Package config loads the user's settings from ~/.config/safeshell/config.json.
+// Package config loads and saves the user's settings under ~/.config/safeshell.
 package config
 
 import (
@@ -9,30 +9,37 @@ import (
 	"path/filepath"
 
 	"safeshell/internal/ai"
+	"safeshell/internal/ai/providers"
+	"safeshell/internal/models"
 )
 
-// Config holds every setting. The zero value is valid: AI on when Ollama is installed.
+// Config holds every setting. The zero value is valid.
 type Config struct {
 	AI struct {
-		Mode  ai.Mode `json:"mode"` // off, local, cloud, hybrid
+		// Mode: auto (local if its files are installed), off, local, cloud, or
+		// hybrid (local first, cloud when local fails).
+		Mode  ai.Mode `json:"mode"`
 		Local struct {
-			URL   string `json:"url"`
-			Model string `json:"model"`
+			Model string `json:"model"` // a models.Catalog id
+			GPU   string `json:"gpu"`   // auto, on, off
 		} `json:"local"`
 		Cloud struct {
-			Model string `json:"model"`
-		} `json:"cloud"` // the key is read from ANTHROPIC_API_KEY, never stored
+			Provider string `json:"provider"` // anthropic, openai, gemini
+			Model    string `json:"model"`    // empty = the provider's default
+		} `json:"cloud"` // keys live in keys.json or the environment, never here
 	} `json:"ai"`
 }
 
-// Path is $XDG_CONFIG_HOME/safeshell/config.json (or ~/.config/...).
-func Path() string {
+func dir() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "safeshell", "config.json")
+		return filepath.Join(d, "safeshell")
 	}
 	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".config", "safeshell", "config.json")
+	return filepath.Join(h, ".config", "safeshell")
 }
+
+// Path is the config file.
+func Path() string { return filepath.Join(dir(), "config.json") }
 
 // Load reads path. A missing file gives defaults; SAFESHELL_AI overrides the mode.
 func Load(path string) (Config, error) {
@@ -58,7 +65,66 @@ func Load(path string) (Config, error) {
 		return Config{}, errors.New("ai.mode must be auto, off, local, cloud or hybrid, not " + string(c.AI.Mode))
 	}
 	if c.AI.Local.Model == "" {
-		c.AI.Local.Model = "qwen2.5-coder:3b"
+		c.AI.Local.Model = models.Default
+	}
+	if _, ok := models.Find(c.AI.Local.Model); !ok {
+		return Config{}, errors.New("ai.local.model " + c.AI.Local.Model + " is not a known model (see /models)")
+	}
+	if c.AI.Local.GPU == "" {
+		c.AI.Local.GPU = "auto"
+	}
+	if p := c.AI.Cloud.Provider; p != "" {
+		if _, ok := providers.Find(p); !ok {
+			return Config{}, errors.New("ai.cloud.provider must be anthropic, openai or gemini, not " + p)
+		}
 	}
 	return c, nil
+}
+
+// Save writes the config privately and atomically.
+func Save(path string, c Config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(c, "", "  ")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// KeysPath is the file holding API keys (mode 0600).
+func KeysPath() string { return filepath.Join(dir(), "keys.json") }
+
+// Key returns the API key for a provider: the environment wins, then keys.json.
+func Key(p providers.Provider) string {
+	if k := p.KeyFromEnv(); k != "" {
+		return k
+	}
+	b, err := os.ReadFile(KeysPath())
+	if err != nil {
+		return ""
+	}
+	var m map[string]string
+	_ = json.Unmarshal(b, &m)
+	return m[p.ID]
+}
+
+// SaveKey stores a provider's key in keys.json, readable only by the user.
+func SaveKey(p providers.Provider, key string) error {
+	m := map[string]string{}
+	if b, err := os.ReadFile(KeysPath()); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	m[p.ID] = key
+	if err := os.MkdirAll(dir(), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	tmp := KeysPath() + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, KeysPath())
 }

@@ -63,9 +63,12 @@ func main() {
 
 // run is main without the process-level parts, so tests can drive it.
 func run(args []string, stdout, stderr io.Writer, color bool) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) == 0 {
 		fmt.Fprint(stdout, usage)
 		return 0
+	}
+	if args[0] == "-h" || args[0] == "--help" {
+		return runHelp(nil, stdout)
 	}
 	switch args[0] {
 	case "check":
@@ -76,6 +79,10 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 		return runSimulate(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr, color)
+	case "models":
+		return runModels(guardInput(), stdout)
+	case "help":
+		return runHelp(args[1:], stdout)
 	case "ai":
 		return runAI(args[1:], stdout, stderr)
 	case "ask":
