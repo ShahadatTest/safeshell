@@ -351,9 +351,14 @@ Splitting by *package boundary* means few merge conflicts and each person can te
 
 ---
 
-## 12. Current state of the code
+## 12. Current state of the code (2026-11-07)
 
-- `safeshell/internal/shellparse` is final in shape: it already matches this architecture.
-- `safeshell/internal/risk` is a **working prototype** (compiles, `ss check` runs, tests not yet written). Phase 0 migrates it into `domain` (types) and `classify` + `classify/rules` (rules), then deletes `risk`.
-- All other packages under `internal/` are empty skeletons with a `doc.go` that states their responsibility and allowed imports.
-- Nothing here is committed to git yet.
+Phase 0 and Phase 1 are done in code; run `make check` in `safeshell/`.
+
+- `domain`: Level, Finding, Alternative, Verdict (done, tested).
+- `shellparse`: pipelines, wrappers (sudo, env, xargs, ...), nested `sh -c` / `eval` / `ssh` / `find -exec`, fork bomb detection. Table tests plus a fuzz target (40 s, about 570k executions, found and fixed one nil panic).
+- `classify` and `classify/rules`: `classify.Classify(line)` returns a Verdict; per-tool rules live in `rules/` one file per family and are reached through `rules.Rate`. Fuzz clean (about 2.4M executions).
+- `eval`: labelled corpus `eval/corpus/commands.tsv` (231 rated rows plus 3 known-gap rows). All rated rows pass and there are no dangerous false negatives. **Caveat:** the corpus was written together with the rules, so 100 % is expected; the real measure is a held-out set written by someone who has not seen the rules (to do in Phase 7).
+- `cmd/ss`: `ss check [--json] <command>` with exit codes 0 (R0-R2), 3 (R3), 4 (R4).
+- Known gaps (kept visible in the corpus): SQL piped on stdin, code inside interpreters (`python -c`), working directory not tracked across `cd / && rm -rf *`.
+- All other packages under `internal/` are still empty skeletons with a `doc.go`.

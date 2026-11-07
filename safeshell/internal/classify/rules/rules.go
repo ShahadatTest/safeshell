@@ -1,5 +1,9 @@
-// Package rules holds the per-tool rating rules: one file per tool family.
-// classify calls Rate for every command; this package never touches the OS.
+// Package rules holds the per-tool rating rules, one file per tool family
+// (fs, disk, git, infra, pkg, db, net, proc). classify calls Rate for every
+// command; this package never touches the OS.
+//
+// Adding support for a new tool means adding a rule here, an entry in the table
+// in rules.go, and rows in eval/corpus.
 package rules
 
 import (
