@@ -1,0 +1,206 @@
+# Contributing to SafeShell
+
+Thank you for helping. This guide explains how the project is organised, how to get your
+change merged, and how releases happen. By taking part you agree to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). The code is under the [MIT licence](LICENSE); by
+contributing you agree your work is released under it too.
+
+Contents: [Ways to help](#ways-to-help) · [Set up](#set-up-your-machine) · [How the code is organised](#how-the-code-is-organised) · [How a command is judged](#how-a-command-is-judged) · [The pull request workflow](#the-pull-request-workflow) · [Coding rules](#coding-rules) · [Tests](#tests) · [Commits and PRs](#commits-and-pull-requests) · [Releases](#releases) · [Security](#reporting-security-problems)
+
+## Ways to help
+
+| You want to... | Do this |
+|---|---|
+| Report a bug | Open an issue: what you typed, what you expected, what happened, and the output of `ss doctor` and `ss version` |
+| Say a command is rated wrongly | Open an issue with the command and the level you think it deserves (see below, this is the most useful report there is) |
+| Add or fix a classifier rule | Edit `safeshell/internal/classify/rules/`, add the command to `safeshell/eval/corpus`, open a PR |
+| Improve the AI prompts | Change `safeshell/internal/nl/translate.go`, run `ss ai bench`, put the before/after numbers in the PR |
+| Improve docs | Edit any `.md` file and open a PR; no tests needed |
+
+Small fixes can go straight to a PR. For anything bigger (a new adapter, a new shell, a
+change to the safety model), open an issue first so we agree on the approach before you write code.
+
+## Set up your machine
+
+Needs Linux (amd64 or arm64), Go (the version in `safeshell/go.mod`), `make`, and git.
+
+```bash
+git clone https://github.com/samarthsinh2660/safeshell.git
+cd safeshell/safeshell        # the Go module is in the inner folder
+make build                    # produces bin/ss
+make check                    # vet + gofmt + race tests + arm64/riscv64 vet; must pass
+```
+
+The sandbox tests need user namespaces. On Ubuntu 24.04+ run the one-time rule first
+(`scripts/install-apparmor.sh bin/ss`, uses sudo), then:
+
+```bash
+make integration                                    # real binary, real kernel
+SS_SWEEP=1 go test ./test/integration -run Sweep    # every labelled command through the real binary
+```
+
+`ss doctor` shows what your machine supports. Tests that need a missing feature skip themselves.
+
+## How the code is organised
+
+SafeShell uses a hexagonal layout: pure logic in the middle, side effects at the edges.
+Dependencies point inward only.
+
+```mermaid
+flowchart LR
+    subgraph Edge["cmd/ss (composition root)"]
+        CLI[CLI, shell hook, daemon]
+    end
+    subgraph Core["Pure core: no files, no network, no env"]
+        D[domain]
+        C[classify]
+        P[policy]
+        R[report]
+    end
+    E[engine<br/>owns the ports]
+    subgraph Adapters["Adapters: do the real work"]
+        S[sandbox<br/>OverlayFS + seccomp]
+        SN[snapshot]
+        AI[ai: local / Claude / GPT / Gemini]
+        RT[runtime: llama.cpp manager]
+        IP[ipc: daemon socket]
+    end
+    CLI --> E
+    CLI --> Adapters
+    E --> C
+    E --> P
+    E --> R
+    C --> D
+    P --> D
+    R --> D
+    Adapters -. implement ports .-> E
+```
+
+The rules this picture enforces:
+
+- `domain`, `classify`, `policy`, `report` never touch files, processes, the network or the environment.
+- `engine` depends only on small interfaces it defines itself ("ports"). Adapters implement them
+  and never import `engine`.
+- `cmd/ss` is the only place that wires adapters to the engine. It holds no business logic.
+- A new shell, snapshot backend, AI provider or inspector is a new adapter or file, not edits scattered through the engine.
+
+More detail in [doc/architecture.md](doc/architecture.md).
+
+## How a command is judged
+
+Every change must keep these safety properties:
+
+```mermaid
+flowchart TD
+    A[You press Enter] --> B[Parse and classify by rules]
+    B --> C{Level}
+    C -->|R0 / R1| RUN[Run]
+    C -->|R2| SIM[Sandbox: run it on a copy]
+    C -->|R3| SIM
+    C -->|R4| HB[Hard block]
+    SIM --> OBS[Observe real changes, inspect disks and processes]
+    OBS --> AIR{AI review on?}
+    AIR -->|yes| AIX[AI may raise the level, never lower it]
+    AIR -->|no| POL
+    AIX --> POL[Policy decides again]
+    POL -->|R2| SNAP[Snapshot, run, ss undo available]
+    POL -->|R3| BLK[Block with reason + safer alternative<br/>user can still choose to do it anyway]
+    POL -->|R0 / R1| RUN
+```
+
+Levels: **R0** read-only, **R1** easily reversed, **R2** reversible with a snapshot,
+**R3** irreversible, **R4** catastrophic. Evidence order is ESTIMATED < INSPECTED < PREVIEWED < OBSERVED.
+
+Invariants (a PR that breaks one will not be merged):
+
+1. Observed effects and the AI can only **raise** a level, never lower it.
+2. Anything unknown, failed or timed out keeps at least its rule level and does not run unattended.
+3. The sandbox never modifies real files.
+4. If SafeShell itself breaks, the shell hook **fails open with a visible warning**, so your terminal keeps working.
+
+## The pull request workflow
+
+`main` is protected. Nothing is committed to it directly.
+
+```mermaid
+flowchart LR
+    I[Issue or idea] --> B[Branch from latest main<br/>feat/ fix/ docs/ ...]
+    B --> W[Write code + tests]
+    W --> L[make check locally]
+    L --> PR[Open pull request<br/>fill in the template]
+    PR --> CI{CI green?}
+    CI -->|no| W
+    CI -->|yes| RV[Review]
+    RV -->|changes asked| W
+    RV -->|approved| M[Merge into main]
+    M --> N[Delete the branch]
+```
+
+Step by step:
+
+```bash
+git switch main && git pull --ff-only origin main
+git switch -c fix/short-description          # prefixes: feat/ fix/ docs/ chore/ refactor/ test/
+# ...work...
+cd safeshell && make check                   # add make integration if you touched sandbox/hook/daemon/snapshots
+git add -A && git commit -m "fix(classify): rate xargs rm as R3"
+git push -u origin fix/short-description     # then open the PR on GitHub
+```
+
+Keep one concern per PR. If `main` moved while you worked, `git rebase origin/main`
+(not a merge commit) and re-run the checks.
+
+## Coding rules
+
+- Follow standard Go style. `gofmt`, `go vet` and `go test -race` must be clean.
+- Write the minimum code that solves the problem. No speculative options, no abstraction for a single use, no dead code.
+- Change only what the PR is about. Don't reformat or "improve" neighbouring code; mention unrelated problems in the PR instead.
+- Errors: wrap with `%w`, say what the user can do next, never include secrets or quote response bodies.
+- User-facing text is plain English: short, no internal jargon, and it says the next step.
+- Linux only (amd64 + arm64; riscv64 must vet). CGO stays off. A new dependency needs a reason in the PR.
+- Never put API keys, tokens or passwords in code, tests, config, logs or commit messages.
+
+## Tests
+
+- Every behaviour change has a test. A bug fix has a test that **failed before** the fix.
+- Classifier rules use table tests. `eval/corpus` is the development set; `eval/heldout` is an
+  independent set that only grows with new, unseen commands. `TestHeldoutReport` enforces
+  accuracy floors: fix the rule, never lower a floor.
+- AI code is unit-tested with fake backends, never the network. `ss ai bench` measures real
+  accuracy on 43 fixed requests (local Qwen 3B about 97%, Gemini flash-lite about 95-100%).
+- Live tests against a provider are opt-in and take keys from environment variables only.
+
+## Commits and pull requests
+
+- Commit messages are short and conventional: `feat(ai): ...`, `fix(sandbox): ...`, `docs: ...`, `chore: ...`, `test: ...`, `refactor: ...`.
+- Prefer a few meaningful commits to many tiny ones.
+- Fill in the PR template: what and why, how you checked it, anything the reviewer should look at closely.
+- Reviewers look for: the safety invariants above, tests, plain-English messages, and a diff that matches the description.
+
+## Releases
+
+Only maintainers release. A release is a pull request from a branch named exactly
+`release/vX.Y.Z` into `main`.
+
+```mermaid
+flowchart LR
+    F[Feature PRs merged to main] --> RB[Create branch release/vX.Y.Z]
+    RB --> RP[Release PR: docs, notes, version mentions only]
+    RP --> CI{CI green + approved?}
+    CI -->|yes| MG[Merge]
+    MG --> WF[release.yml runs]
+    WF --> T[make check]
+    T --> BU[Build tarballs amd64/arm64 + .deb + SHA256SUMS]
+    BU --> GR[GitHub Release created with the files attached]
+```
+
+Use semantic versions: patch for fixes, minor for new features, major for breaking changes.
+Users then download the `.deb` or tarball from the Releases page. Getting SafeShell into the
+official Debian and Ubuntu archives is described in [doc/debian-ubuntu.md](doc/debian-ubuntu.md).
+
+## Reporting security problems
+
+Do not open a public issue. Use **Security → Report a vulnerability** on the GitHub repository
+so it stays private until fixed. Include what you ran, what you expected, and what happened.
+A way to run a dangerous command without SafeShell noticing, or to lower a risk level, counts as
+a security problem.
