@@ -4,24 +4,34 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"safeshell/internal/classify"
 	"safeshell/internal/domain"
 	"safeshell/internal/platform"
+	"safeshell/internal/sandbox"
+	"safeshell/internal/sandbox/overlayfs"
 )
 
-// probe is replaced in tests.
-var probe = platform.Probe
+// probe and simulate are replaced in tests.
+var (
+	probe    = platform.Probe
+	simulate = overlayfs.Run
+)
 
 const usage = `SafeShell: a safety layer for your terminal.
 
 Usage:
   ss check [--json] <command...>   rate a command without running it
+  ss simulate [--json] [--cwd DIR] [--timeout 30s] <command...>
+                                   run a command in a sandbox and show what it changed;
+                                   the real files are never touched
   ss doctor                        show what this machine allows (sandbox, snapshots, AI)
 
 Quote the command so your shell passes it through untouched:
@@ -31,6 +41,10 @@ Exit status of 'ss check': 0 = R0-R2, 3 = R3 (irreversible), 4 = R4 (catastrophi
 `
 
 func main() {
+	// The sandbox re-executes this binary; that path must run before anything else.
+	if len(os.Args) > 1 && os.Args[1] == "sandbox-init" {
+		os.Exit(overlayfs.Init())
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, useColor(os.Stdout)))
 }
 
@@ -43,6 +57,8 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 	switch args[0] {
 	case "check":
 		return check(args[1:], stdout, stderr, color)
+	case "simulate":
+		return runSimulate(args[1:], stdout, stderr)
 	case "doctor":
 		return doctor(stdout, probe())
 	default:
@@ -144,4 +160,135 @@ func doctor(w io.Writer, r platform.Report) int {
 		return 0
 	}
 	return 1
+}
+
+func runSimulate(args []string, stdout, stderr io.Writer) int {
+	spec := sandbox.Spec{}
+	asJSON := false
+	for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+		switch args[0] {
+		case "--json":
+			asJSON = true
+		case "--cwd", "--timeout":
+			if len(args) < 2 {
+				fmt.Fprint(stderr, usage)
+				return 2
+			}
+			if args[0] == "--cwd" {
+				spec.Cwd = args[1]
+			} else if d, err := time.ParseDuration(args[1]); err != nil {
+				fmt.Fprintf(stderr, "ss simulate: bad --timeout %q (try 5s)\n", args[1])
+				return 2
+			} else {
+				spec.Timeout = d
+			}
+			args = args[1:]
+		default:
+			fmt.Fprintf(stderr, "ss simulate: unknown option %s\n", args[0])
+			return 2
+		}
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	spec.Line = strings.Join(args, " ")
+	res, err := simulate(context.Background(), spec)
+	if err != nil {
+		fmt.Fprintf(stderr, "ss simulate: %v\n", err)
+		return 1
+	}
+	if asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(res)
+	} else {
+		simReport(stdout, spec.Line, res)
+	}
+	return 0
+}
+
+const maxListed = 15
+
+func simReport(w io.Writer, line string, r sandbox.Result) {
+	status := fmt.Sprintf("exit %d", r.ExitCode)
+	if r.TimedOut {
+		status = "timed out"
+	}
+	t := r.Diff.Totals()
+	fmt.Fprintf(w, "Simulated in %s (%s). Your real files were not touched.\n$ %s\n\n", r.Duration.Round(time.Millisecond), status, line)
+	fmt.Fprintf(w, "  created   %s\n  modified  %s\n  deleted   %s", plural(t.Created), plural(t.Modified), plural(t.Deleted))
+	if t.Deleted > 0 {
+		fmt.Fprintf(w, " (%s)", humanBytes(t.DeletedBytes))
+	}
+	if r.Diff.Truncated {
+		fmt.Fprint(w, " (count stopped at a limit)")
+	}
+	fmt.Fprintln(w)
+	if len(r.Diff.Changes) > 0 {
+		fmt.Fprintln(w, "\nChanges")
+		for i, c := range r.Diff.Changes {
+			if i == maxListed {
+				fmt.Fprintf(w, "  ... and %d more\n", len(r.Diff.Changes)-maxListed)
+				break
+			}
+			dir := ""
+			if c.IsDir {
+				dir = "/"
+			}
+			extra := ""
+			if c.IsDir && c.Files > 0 {
+				extra = fmt.Sprintf("  (%s)", plural(c.Files))
+			}
+			fmt.Fprintf(w, "  %-9s /%s%s%s\n", c.Kind, c.Path, dir, extra)
+		}
+	}
+	for _, wn := range r.Warnings {
+		fmt.Fprintf(w, "\nWarning: %s\n", wn)
+	}
+	for _, o := range []struct{ name, text string }{{"stdout", r.Stdout}, {"stderr", r.Stderr}} {
+		if strings.TrimSpace(o.text) != "" {
+			fmt.Fprintf(w, "\n%s\n%s", o.name, indent(o.text))
+		}
+	}
+	if r.Truncated {
+		fmt.Fprintln(w, "  (output cut)")
+	}
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%s files", commas(n))
+}
+
+func commas(n int) string {
+	s := fmt.Sprint(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+func humanBytes(b int64) string {
+	const u = 1024
+	if b < u {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(u), 0
+	for n := b / u; n >= u; n /= u {
+		div *= u
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGT"[exp])
+}
+
+func indent(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = "  " + l
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
