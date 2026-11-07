@@ -1,30 +1,68 @@
 name: release
-# Push a tag such as v0.1.0 and this builds the tarballs, the .deb and SHA256SUMS,
-# then attaches them to a GitHub Release.
+# A release happens when a pull request from a branch named release/vX.Y.Z is merged into main.
+# It tags main, builds the tarballs and .deb, creates the GitHub Release, and
+# publishes the apt repository (GitHub Pages, branch gh-pages).
 on:
-  push:
-    tags: ["v*"]
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
   contents: write
 
+concurrency: release
+
 jobs:
   release:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: safeshell
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Version from the branch name
+        id: v
+        run: |
+          v=${HEAD_REF#release/}
+          [[ "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "branch must be release/vX.Y.Z, got $HEAD_REF"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "deb=${v#v}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: safeshell/go.mod
-      - run: make check
-      - run: make dist VERSION=${{ github.ref_name }}
-      - run: make deb VERSION=${{ github.ref_name }}
-      - name: Checksums for everything we ship
-        run: cd dist && sha256sum *.tar.gz *.deb > SHA256SUMS
-      - name: Publish
+      - name: Build everything
+        working-directory: safeshell
+        run: |
+          make check
+          make dist VERSION=${{ steps.v.outputs.version }}
+          make deb VERSION=${{ steps.v.outputs.version }}
+          cd dist && sha256sum *.tar.gz *.deb > SHA256SUMS
+      - name: GitHub Release
+        working-directory: safeshell
+        run: |
+          gh release create "${{ steps.v.outputs.version }}" dist/*.tar.gz dist/*.deb dist/SHA256SUMS \
+            --target "$MERGE_SHA" --title "SafeShell ${{ steps.v.outputs.version }}" --generate-notes
+      - name: Publish the apt repository
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/*.tar.gz dist/*.deb dist/SHA256SUMS --generate-notes
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then echo "::warning::APT_GPG_PRIVATE_KEY is not set; apt repository not published"; exit 0; fi
+          sudo apt-get install -y dpkg-dev apt-utils >/dev/null
+          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git worktree add _pages origin/gh-pages
+          else
+            git worktree add --detach _pages && git -C _pages checkout --orphan gh-pages && git -C _pages rm -rf . >/dev/null
+          fi
+          safeshell/scripts/apt-repo.sh _pages safeshell/dist/safeshell_${{ steps.v.outputs.deb }}_amd64.deb "$key"
+          cp safeshell/packaging/apt/setup.sh _pages/setup.sh
+          touch _pages/.nojekyll
+          cd _pages
+          git config user.name "safeshell-release"; git config user.email "noreply@users.noreply.github.com"
+          git add -A && git commit -m "apt: safeshell ${{ steps.v.outputs.deb }}" && git push origin HEAD:gh-pages

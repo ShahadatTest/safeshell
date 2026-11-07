@@ -25,8 +25,10 @@ Linux, amd64 or arm64 (bash or zsh).
 tar -xzf safeshell-vX.Y.Z-linux-amd64.tar.gz && cd safeshell-vX.Y.Z-linux-amd64
 bash scripts/install.sh            # add --ai to also set up the built-in AI
 
-# or the Debian package (also installs the AppArmor rule)
-sudo apt install ./safeshell_X.Y.Z_amd64.deb && ss install
+# or with apt (Ubuntu/Debian amd64): adds the signed SafeShell source, then installs
+curl -fsSL https://samarthsinh2660.github.io/safeshell/setup.sh | sudo sh
+ss install                         # hook your shell
+# later updates arrive with:  sudo apt update && sudo apt upgrade
 
 # or from source (needs Go)
 cd safeshell && make build && bash scripts/install.sh
@@ -71,14 +73,11 @@ Layout: pure `domain/classify/policy/report`, an `engine` with ports, adapters
 (sandbox, snapshot, AI, runtime), and `cmd/ss` as the composition root. See
 [doc/architecture.md](doc/architecture.md).
 
-## Publishing a release
+## Contributing and releases
 
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-`.github/workflows/release.yml` runs the checks, builds both tarballs, the `.deb` and
-`SHA256SUMS`, and attaches them to a GitHub Release. Locally: `make dist VERSION=v0.1.0 && make deb`.
+All changes go through pull requests (rules in [CLAUDE.md](CLAUDE.md)). A release is a PR from
+`release/vX.Y.Z` into `main`; merging it tags the version, builds the tarballs and `.deb`,
+creates the GitHub Release, and updates the apt repository on GitHub Pages.
 
 ## Team
 
