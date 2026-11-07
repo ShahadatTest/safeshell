@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -226,5 +227,121 @@ func TestRelativePathsUseTheGivenDirectory(t *testing.T) {
 	r := simulate(t, "--cwd", d, "pwd; cat keep.txt")
 	if !strings.Contains(r.Stdout, d) || !strings.Contains(r.Stdout, "keep") {
 		t.Errorf("stdout = %q", r.Stdout)
+	}
+}
+
+type analysis struct {
+	Level    string
+	Decision string
+	Effects  []struct {
+		Kind     string
+		Evidence string
+		Summary  string
+		Details  []string
+	}
+	Verdict struct{ Level string }
+}
+
+func analyze(t *testing.T, args ...string) analysis {
+	t.Helper()
+	out, err := exec.Command(ssBin, append([]string{"analyze", "--json"}, args...)...).Output()
+	if _, ok := err.(*exec.ExitError); err != nil && !ok { // non-zero exit codes are expected for blocks
+		t.Fatalf("ss analyze %v: %v", args, err)
+	}
+	var a analysis
+	if err := json.Unmarshal(out, &a); err != nil {
+		t.Fatalf("bad JSON: %v\n%s", err, out)
+	}
+	return a
+}
+
+func (a analysis) effect(kind string) (struct {
+	Kind     string
+	Evidence string
+	Summary  string
+	Details  []string
+}, bool) {
+	for _, e := range a.Effects {
+		if e.Kind == kind {
+			return e, true
+		}
+	}
+	return e0, false
+}
+
+var e0 struct {
+	Kind     string
+	Evidence string
+	Summary  string
+	Details  []string
+}
+
+func TestAnalyzeObservesAndBlocksARecursiveDelete(t *testing.T) {
+	needSandbox(t)
+	d := fixture(t)
+	a := analyze(t, "--cwd", d, "rm -rf proj")
+	fs, ok := a.effect("files")
+	if !ok || fs.Evidence != "OBSERVED" || !strings.Contains(fs.Summary, "delete 2 files") {
+		t.Fatalf("file effect: %+v", fs)
+	}
+	if a.Level != "R3" || a.Decision != "block" {
+		t.Errorf("level %s decision %s", a.Level, a.Decision)
+	}
+	if _, err := os.Stat(filepath.Join(d, "proj", "a.txt")); err != nil {
+		t.Error("the analysis touched the real files")
+	}
+}
+
+func TestAnalyzeRaisesTheLevelWhenImportantFilesAreDeleted(t *testing.T) {
+	needSandbox(t)
+	d := fixture(t)
+	os.MkdirAll(filepath.Join(d, "repo", ".git"), 0o755)
+	os.WriteFile(filepath.Join(d, "repo", ".git", "HEAD"), []byte("ref"), 0o644)
+	a := analyze(t, "--cwd", d, "rm repo/.git/HEAD")
+	if a.Verdict.Level != "R2" || a.Level != "R3" {
+		t.Errorf("rules %s final %s: deleting git history should be raised by what was observed", a.Verdict.Level, a.Level)
+	}
+}
+
+func TestAnalyzeListsTheRealProcessesAPkillWouldHit(t *testing.T) {
+	needSandbox(t)
+	marker := "ss-integration-marker-" + time.Now().Format("150405")
+	// the marker is $0 of the shell, so it appears in the command line without breaking sleep
+	victim := exec.Command("sh", "-c", "sleep 60", marker)
+	if err := victim.Start(); err != nil {
+		t.Skip("cannot start sh")
+	}
+	defer func() { victim.Process.Kill(); victim.Wait() }()
+
+	a := analyze(t, "pkill -f "+marker)
+	pe, ok := a.effect("processes")
+	if !ok || pe.Evidence != "INSPECTED" || !strings.Contains(pe.Summary, "1 running") {
+		t.Fatalf("process effect: %+v", pe)
+	}
+	if err := victim.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Errorf("the victim is gone (%v): analysis must never signal anything", err)
+	}
+}
+
+func TestAnalyzeIdentifiesARealDiskWithoutTouchingIt(t *testing.T) {
+	needSandbox(t)
+	if _, err := os.Stat("/sys/class/block"); err != nil {
+		t.Skip("no /sys/class/block")
+	}
+	entries, _ := os.ReadDir("/sys/class/block")
+	var disk string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "sd") || strings.HasPrefix(e.Name(), "nvme") || strings.HasPrefix(e.Name(), "vd") {
+			disk = e.Name()
+			break
+		}
+	}
+	if disk == "" {
+		t.Skip("no sd/nvme/vd disk on this machine")
+	}
+	a := analyze(t, "dd if=/dev/zero of=/dev/"+disk+" bs=1M")
+	de, ok := a.effect("disk")
+	if !ok || de.Evidence != "INSPECTED" || a.Decision != "hard-block" || !strings.Contains(de.Summary, "/dev/"+disk) {
+		t.Errorf("%+v decision %s", de, a.Decision)
 	}
 }
