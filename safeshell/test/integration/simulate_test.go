@@ -409,3 +409,14 @@ func TestACleanCommandRecordsNoNetworkAttempts(t *testing.T) {
 		t.Errorf("unexpected attempts: %+v", r.Net)
 	}
 }
+
+func TestResourceLimitsApplyToTheCommand(t *testing.T) {
+	needSandbox(t)
+	r := simulate(t, `ulimit -f; ulimit -c; dd if=/dev/zero of=/tmp/ss-big bs=1M count=1100 2>&1 | tail -1`)
+	if !strings.HasPrefix(r.Stdout, "1048576\n0\n") { // bash counts ulimit -f in KiB
+		t.Errorf("limits not applied: %q", r.Stdout)
+	}
+	if _, err := os.Stat("/tmp/ss-big"); err == nil {
+		t.Error("write reached the real /tmp")
+	}
+}

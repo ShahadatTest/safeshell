@@ -38,6 +38,7 @@ func Init() int {
 	// No new privileges: setuid programs inside cannot gain anything.
 	_, _, _ = syscall.Syscall(syscall.SYS_PRCTL, 38 /* PR_SET_NO_NEW_PRIVS */, 1, 0)
 
+	limitResources()
 	watchNetwork() // before the command starts, so it and its children are all watched
 
 	shell := req.Shell
@@ -253,4 +254,18 @@ func watchNetwork() {
 	}
 	defer f.Close()
 	_ = netwatch.Offer(sock, f)
+}
+
+// limitResources caps what a simulated command can consume. cgroups would be
+// stricter but need systemd delegation, which a rootless tool cannot assume.
+// Limits are inherited by the command and its children.
+func limitResources() {
+	for res, max := range map[int]uint64{
+		syscall.RLIMIT_FSIZE:  1 << 30, // no single file over 1 GiB: the scratch area lives in RAM
+		syscall.RLIMIT_CORE:   0,
+		syscall.RLIMIT_NOFILE: 8192,
+		6 /* RLIMIT_NPROC */ : 4096,
+	} {
+		_ = syscall.Setrlimit(res, &syscall.Rlimit{Cur: max, Max: max})
+	}
 }
