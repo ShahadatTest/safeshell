@@ -141,7 +141,7 @@ Gemini flash-lite 95-100%, with no unsafe suggestions in either.
 
 ## Documentation
 
-[Architecture](doc/architecture.md) ·
+[Architecture](doc/architecture.md) · [Changelog](CHANGELOG.md) ·
 [Presentation](doc/ppt/safeshell.pptx) ([HTML](doc/ppt/safeshell.html)) ·
 [Contributing](CONTRIBUTING.md) ·
 [Code of Conduct](CODE_OF_CONDUCT.md) ·
