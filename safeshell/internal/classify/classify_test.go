@@ -196,3 +196,64 @@ func FuzzClassify(f *testing.F) {
 		}
 	})
 }
+
+func TestWorkingDirectoryChangesMeaning(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{"cd / && rm -rf *", R4},
+		{"cd /etc && rm -rf .", R4},
+		{"cd ~ && rm -rf *", R4},
+		{"cd /var && chmod -R 777 .", R4},
+		{"cd / && chmod -R 755 etc", R4}, // resolves to /etc
+		{"cd /tmp && rm -rf *", R3},
+		{"(cd / && ls); rm -rf *", R3},
+		{"cd $X && rm -rf *", R3},
+		{"cd /tmp && chmod 777 file", R2}, // the mode is not a path
+	} {
+		if got := Classify(tc.line).Level; got != tc.want {
+			t.Errorf("%q = %s, want %s", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestDatabaseInputOnStdin(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{`echo "DROP TABLE users" | psql`, R3},
+		{`psql <<< "DELETE FROM users"`, R3},
+		{"psql <<EOF\nTRUNCATE users;\nEOF", R3},
+		{`echo "DELETE FROM users WHERE id=1" | psql`, R2},
+		{`echo "SELECT 1" | psql`, R0},
+	} {
+		if got := Classify(tc.line).Level; got != tc.want {
+			t.Errorf("%q = %s, want %s", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestInlineInterpreterCode(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{`python3 -c "import shutil; shutil.rmtree('/')"`, R4},
+		{`python3 -c "import shutil; shutil.rmtree('/home')"`, R4},
+		{`python3 -c "import shutil; shutil.rmtree('build')"`, R3},
+		{`python3 -c "import os; os.remove('a')"`, R2},
+		{`python3 -c "open('a','w').write('x')"`, R2},
+		{`python3 -c "print(1)"`, R2}, // unknown effects: simulate first
+		{`python3 script.py`, R1},
+		{`sudo python3 -c "import shutil; shutil.rmtree('build')"`, R4},
+	} {
+		if got := Classify(tc.line).Level; got != tc.want {
+			t.Errorf("%q = %s, want %s", tc.line, got, tc.want)
+		}
+	}
+	if v := Classify("python3 script.py"); len(v.Unclassified) != 1 {
+		t.Errorf("a script file should be handed to the sandbox as unclassified: %+v", v.Unclassified)
+	}
+}

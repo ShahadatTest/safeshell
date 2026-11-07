@@ -7,6 +7,7 @@ package shellparse
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -31,6 +32,12 @@ type Command struct {
 	Remote     string // non-empty when it runs on another host over ssh
 	Downloads  bool   // an argument is a <(...) that fetches from the network
 	Redirs     []Redirect
+	// Stdin is text fed to the command by a pipe from echo/printf, a here-string
+	// or a here-document. It is how `echo "DROP TABLE x" | psql` is seen.
+	Stdin string
+	// Cwd is where the command runs, tracked through `cd` on the same line.
+	// "" means the directory the line started in; "?" means unknown.
+	Cwd string
 }
 
 // String renders the command roughly as typed, for use in reports.
@@ -64,6 +71,7 @@ func Parse(line string) (*Result, error) {
 type walker struct {
 	res    *Result
 	remote string
+	cwd    string
 }
 
 func (w *walker) parseString(src string, depth int) error {
@@ -90,6 +98,9 @@ func (w *walker) stmt(s *syntax.Stmt, depth int) {
 	case *syntax.CallExpr:
 		if cmd, ok := w.build(c, s, depth); ok {
 			w.single(cmd)
+			if cmd.Name == "cd" {
+				w.cd(cmd.Args)
+			}
 		}
 	case *syntax.BinaryCmd:
 		if c.Op == syntax.Pipe || c.Op == syntax.PipeAll {
@@ -105,8 +116,19 @@ func (w *walker) stmt(s *syntax.Stmt, depth int) {
 		if c.Body != nil {
 			w.stmt(c.Body, depth)
 		}
-	default:
+	case *syntax.Subshell:
+		saved := w.cwd
 		w.children(c, depth)
+		w.cwd = saved // a subshell's cd does not leak out
+		if len(s.Redirs) > 0 {
+			w.single(Command{Redirs: redirects(s.Redirs), Background: s.Background, Remote: w.remote})
+		}
+	default:
+		before := w.cwd
+		w.children(c, depth)
+		if _, isBlock := c.(*syntax.Block); !isBlock && w.cwd != before {
+			w.cwd = "?" // a cd inside if/for/while may or may not have run
+		}
 		if len(s.Redirs) > 0 {
 			w.single(Command{Redirs: redirects(s.Redirs), Background: s.Background, Remote: w.remote})
 		}
@@ -143,10 +165,16 @@ func (w *walker) pipeline(s *syntax.Stmt, depth int) {
 	var p Pipeline
 	for _, st := range stmts {
 		if call, ok := st.Cmd.(*syntax.CallExpr); ok {
-			if cmd, ok := w.build(call, st, depth); ok {
-				cmd.Background = s.Background
-				p.Cmds = append(p.Cmds, cmd)
+			cmd, ok := w.build(call, st, depth)
+			if !ok {
+				continue
 			}
+			cmd.Background = s.Background
+			if n := len(p.Cmds); n > 0 && (p.Cmds[n-1].Name == "echo" || p.Cmds[n-1].Name == "printf") {
+				cmd.Stdin += " " + strings.Join(p.Cmds[n-1].Args, " ")
+				w.stdinCode(&cmd, depth)
+			}
+			p.Cmds = append(p.Cmds, cmd)
 			continue
 		}
 		w.stmt(st, depth)
@@ -166,9 +194,11 @@ func (w *walker) build(call *syntax.CallExpr, st *syntax.Stmt, depth int) (Comma
 		syntax.Walk(a, func(n syntax.Node) bool {
 			switch x := n.(type) {
 			case *syntax.CmdSubst:
+				saved := w.cwd
 				for _, s := range x.Stmts {
 					w.stmt(s, depth)
 				}
+				w.cwd = saved
 				return false
 			case *syntax.ProcSubst:
 				for _, s := range x.Stmts {
@@ -185,7 +215,7 @@ func (w *walker) build(call *syntax.CallExpr, st *syntax.Stmt, depth int) (Comma
 	if len(words) == 0 {
 		return Command{}, false
 	}
-	cmd := Command{Background: st.Background, Remote: w.remote, Downloads: downloads, Redirs: redirects(st.Redirs)}
+	cmd := Command{Background: st.Background, Remote: w.remote, Downloads: downloads, Redirs: redirects(st.Redirs), Cwd: w.cwd, Stdin: hereText(st.Redirs)}
 	rest := unwrap(words, &cmd)
 	if len(rest) == 0 {
 		return cmd, false
@@ -193,6 +223,7 @@ func (w *walker) build(call *syntax.CallExpr, st *syntax.Stmt, depth int) (Comma
 	cmd.Name, cmd.Args = rest[0], rest[1:]
 	if depth < maxDepth {
 		w.nested(&cmd, depth)
+		w.stdinCode(&cmd, depth)
 	}
 	return cmd, true
 }
@@ -219,6 +250,53 @@ func (w *walker) nested(c *Command, depth int) {
 		}
 	case "find":
 		w.findExec(c)
+	case "python", "python3", "perl", "ruby", "node":
+		for _, sh := range embeddedShell(InlineCode(*c)) {
+			_ = w.parseString(sh, depth+1)
+		}
+	}
+}
+
+// stdinCode analyses text a shell reads from stdin, as in `echo "rm -rf /" | sh`.
+func (w *walker) stdinCode(c *Command, depth int) {
+	if strings.TrimSpace(c.Stdin) == "" || depth >= maxDepth {
+		return
+	}
+	switch c.Name {
+	case "sh", "bash", "zsh", "dash", "ksh":
+		for _, a := range c.Args {
+			if !strings.HasPrefix(a, "-") {
+				return // runs a named script, not stdin
+			}
+			if a == "-c" {
+				return
+			}
+		}
+		_ = w.parseString(c.Stdin, depth+1)
+	}
+}
+
+// cd updates the tracked working directory after `cd args`.
+func (w *walker) cd(args []string) {
+	var dir string
+	n := 0
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") && a != "-" {
+			continue
+		}
+		dir = a
+		n++
+	}
+	switch {
+	case n == 0:
+		w.cwd = "~"
+	case n > 1 || dir == "-" || strings.ContainsAny(dir, "$`?"):
+		w.cwd = "?"
+	case strings.HasPrefix(dir, "/") || strings.HasPrefix(dir, "~"):
+		w.cwd = path.Clean(dir)
+	case w.cwd == "?":
+	default:
+		w.cwd = path.Join(w.cwd, dir)
 	}
 }
 
@@ -378,4 +456,18 @@ func wordString(w *syntax.Word) string {
 	}
 	parts(w.Parts)
 	return sb.String()
+}
+
+// hereText returns the text of here-strings and here-documents among rs.
+func hereText(rs []*syntax.Redirect) string {
+	var parts []string
+	for _, r := range rs {
+		switch {
+		case r.Hdoc != nil:
+			parts = append(parts, wordString(r.Hdoc))
+		case r.Op == syntax.WordHdoc && r.Word != nil:
+			parts = append(parts, wordString(r.Word))
+		}
+	}
+	return strings.Join(parts, "\n")
 }

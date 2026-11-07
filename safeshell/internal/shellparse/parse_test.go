@@ -191,3 +191,97 @@ func FuzzParse(f *testing.F) {
 		_, _ = Parse(s) // must never panic or hang
 	})
 }
+
+func TestStdinFromPipeHereStringAndHeredoc(t *testing.T) {
+	if c := find(mustParse(t, `echo "DROP TABLE users" | psql`), "psql"); c == nil || !strings.Contains(c.Stdin, "DROP TABLE users") {
+		t.Errorf("pipe from echo should become Stdin: %+v", c)
+	}
+	if c := find(mustParse(t, `psql <<< "TRUNCATE t"`), "psql"); c == nil || !strings.Contains(c.Stdin, "TRUNCATE t") {
+		t.Errorf("here-string should become Stdin: %+v", c)
+	}
+	if c := find(mustParse(t, "psql <<EOF\nDROP TABLE x;\nEOF"), "psql"); c == nil || !strings.Contains(c.Stdin, "DROP TABLE x") {
+		t.Errorf("here-document should become Stdin: %+v", c)
+	}
+}
+
+func TestShellReadingStdinIsParsed(t *testing.T) {
+	for _, line := range []string{`echo "rm -rf /" | sh`, `echo "rm -rf /" | sudo bash`, "bash <<EOF\nrm -rf /\nEOF"} {
+		if find(mustParse(t, line), "rm") == nil {
+			t.Errorf("%q: code fed to a shell on stdin was not analysed", line)
+		}
+	}
+	// A shell running a named script is not reading stdin.
+	if find(mustParse(t, `echo "rm -rf /" | bash script.sh`), "rm") != nil {
+		t.Error("bash script.sh must not execute the echoed text")
+	}
+}
+
+func TestCwdTracking(t *testing.T) {
+	cwd := func(line, name string) string {
+		c := find(mustParse(t, line), name)
+		if c == nil {
+			t.Fatalf("%q: no %s", line, name)
+		}
+		return c.Cwd
+	}
+	tests := []struct {
+		line, name, want string
+	}{
+		{"rm x", "rm", ""},
+		{"cd /etc && rm x", "rm", "/etc"},
+		{"cd /etc; rm x", "rm", "/etc"},
+		{"cd /etc && cd .. && rm x", "rm", "/"},
+		{"cd /var && cd log && rm x", "rm", "/var/log"},
+		{"cd sub && rm x", "rm", "sub"},
+		{"cd && rm x", "rm", "~"},
+		{"cd ~/work && rm x", "rm", "~/work"},
+		{"cd $DIR && rm x", "rm", "?"},
+		{"cd - && rm x", "rm", "?"},
+		{"(cd /etc && ls); rm x", "rm", ""},            // subshell does not leak
+		{"echo $(cd /etc; pwd); rm x", "rm", ""},       // neither does a substitution
+		{"{ cd /etc; rm x; }", "rm", "/etc"},           // a brace group does
+		{"if true; then cd /etc; fi; rm x", "rm", "?"}, // conditional cd: unknown
+		{"cd /etc && rm x && cd /usr && rm y", "rm", "/etc"},
+	}
+	for _, tt := range tests {
+		if got := cwd(tt.line, tt.name); got != tt.want {
+			t.Errorf("%q: cwd = %q, want %q", tt.line, got, tt.want)
+		}
+	}
+}
+
+func TestInlineCode(t *testing.T) {
+	for _, tc := range []struct {
+		c    Command
+		want string
+	}{
+		{Command{Name: "python3", Args: []string{"-c", "print(1)"}}, "print(1)"},
+		{Command{Name: "perl", Args: []string{"-e", "x"}}, "x"},
+		{Command{Name: "node", Args: []string{"-e", "y"}}, "y"},
+		{Command{Name: "python3", Args: []string{"script.py"}}, ""},
+		{Command{Name: "python3", Args: []string{"-c"}}, ""},
+		{Command{Name: "ls", Args: []string{"-c", "x"}}, ""},
+	} {
+		if got := InlineCode(tc.c); got != tc.want {
+			t.Errorf("InlineCode(%v) = %q, want %q", tc.c, got, tc.want)
+		}
+	}
+}
+
+func TestEmbeddedShellInInterpreters(t *testing.T) {
+	for _, line := range []string{
+		`python3 -c "import os; os.system('rm -rf /')"`,
+		`python3 -c "import subprocess; subprocess.run(['rm', '-rf', '/'])"`,
+		`python3 -c 'import subprocess; subprocess.call("rm -rf /", shell=True)'`,
+		`perl -e 'system("rm -rf /")'`,
+		`ruby -e 'system("rm -rf /")'`,
+		`node -e "require('child_process').execSync('rm -rf /')"`,
+	} {
+		if find(mustParse(t, line), "rm") == nil {
+			t.Errorf("%q: embedded rm not found", line)
+		}
+	}
+	if r := mustParse(t, `python3 -c "print('rm -rf /')"`); find(r, "rm") != nil {
+		t.Error("a printed string is not a command")
+	}
+}

@@ -8,7 +8,7 @@ import (
 )
 
 func ruleDB(c shellparse.Command, f flags) []Finding {
-	text := f.joined()
+	text := f.joined() + " " + c.Stdin
 	up := strings.ToUpper(text)
 	switch {
 	case c.Name == "redis-cli" && (strings.Contains(up, "FLUSHALL") || strings.Contains(up, "FLUSHDB")):
