@@ -30,6 +30,9 @@ const usage = `SafeShell: a safety layer for your terminal.
 
 Usage:
   ss check [--json] <command...>   rate a command without running it
+  ss analyze [--json] [--cwd DIR] <command...>
+                                   the full picture: risk level, a sandbox run, the real
+                                   processes and disks it would hit, and safer options
   ss simulate [--json] [--cwd DIR] [--timeout 30s] <command...>
                                    run a command in a sandbox and show what it changed;
                                    the real files are never touched
@@ -58,6 +61,8 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 	switch args[0] {
 	case "check":
 		return check(args[1:], stdout, stderr, color)
+	case "analyze":
+		return runAnalyze(args[1:], stdout, stderr, color)
 	case "simulate":
 		return runSimulate(args[1:], stdout, stderr)
 	case "doctor":
