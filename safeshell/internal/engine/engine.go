@@ -91,6 +91,9 @@ func (a *Analysis) simulate(ctx context.Context, sim Simulator, cwd string) {
 	}
 	a.Sim = &res
 	a.Effects = append(a.Effects, report.FileEffect(res.Diff))
+	if ne, ok := report.NetEffect(res.Net); ok {
+		a.Effects = append(a.Effects, ne)
+	}
 	if res.TimedOut {
 		a.SimNote = "the sandbox run timed out; changes made before then are shown"
 		a.Effects = append(a.Effects, a.estimated(fmt.Sprintf("the run did not finish within %s, so its full effect is unknown", res.Duration.Round(1e8))))

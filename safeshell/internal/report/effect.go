@@ -53,3 +53,26 @@ func FileEffect(d sandbox.FileDiff) domain.Effect {
 	}
 	return e
 }
+
+// ignoredSockets are lookups every libc program makes; they say nothing about the command.
+var ignoredSockets = map[string]bool{"/var/run/nscd/socket": true, "/run/nscd/socket": true}
+
+// NetEffect describes the network operations the command tried inside the
+// sandbox, where they all failed. ok is false when there were none worth showing.
+func NetEffect(attempts []sandbox.NetAttempt) (e domain.Effect, ok bool) {
+	var shown []sandbox.NetAttempt
+	for _, a := range attempts {
+		if !ignoredSockets[a.Addr] {
+			shown = append(shown, a)
+		}
+	}
+	if len(shown) == 0 {
+		return e, false
+	}
+	e = domain.Effect{Kind: domain.EffectNetwork, Evidence: domain.Observed, MinLevel: domain.R2,
+		Summary: "would reach out over the network or to a local service; blocked in the sandbox, but it would go through for real"}
+	for _, a := range shown {
+		e.Details = append(e.Details, a.String())
+	}
+	return e, true
+}

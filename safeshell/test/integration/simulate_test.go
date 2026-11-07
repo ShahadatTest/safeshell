@@ -5,6 +5,7 @@ package integration
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,10 @@ type result struct {
 	Diff      struct{ Changes []change }
 	Truncated bool
 	Warnings  []string
+	Net       []struct {
+		Family, Addr string
+		Port, Count  int
+	}
 }
 
 var ssBin string
@@ -343,5 +348,64 @@ func TestAnalyzeIdentifiesARealDiskWithoutTouchingIt(t *testing.T) {
 	de, ok := a.effect("disk")
 	if !ok || de.Evidence != "INSPECTED" || a.Decision != "hard-block" || !strings.Contains(de.Summary, "/dev/"+disk) {
 		t.Errorf("%+v decision %s", de, a.Decision)
+	}
+}
+
+func TestNetworkAttemptsAreRecordedWithTheirDestination(t *testing.T) {
+	needSandbox(t)
+	r := simulate(t, `python3 -c "import socket; socket.create_connection(('203.0.113.9', 8080), 2)"`)
+	for _, n := range r.Net {
+		if n.Family == "inet" && n.Addr == "203.0.113.9" && n.Port == 8080 {
+			return
+		}
+	}
+	t.Errorf("connection attempt not recorded: %+v", r.Net)
+}
+
+func TestHostUnixSocketIsNotReachableFromTheSandbox(t *testing.T) {
+	needSandbox(t)
+	sock := filepath.Join(t.TempDir(), "host.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	accepted := make(chan struct{}, 1)
+	go func() {
+		if c, err := l.Accept(); err == nil {
+			c.Close()
+			accepted <- struct{}{}
+		}
+	}()
+	r := simulate(t, `python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.connect('`+sock+`')"`)
+	if r.ExitCode == 0 {
+		t.Error("the sandbox connected to a socket on the host")
+	}
+	select {
+	case <-accepted:
+		t.Error("the host service received a connection from the sandbox")
+	case <-time.After(300 * time.Millisecond):
+	}
+	for _, n := range r.Net {
+		if n.Family == "unix" && n.Addr == sock {
+			return
+		}
+	}
+	t.Errorf("socket attempt not recorded: %+v", r.Net)
+}
+
+func TestAnalyzeReportsNetworkAttempts(t *testing.T) {
+	needSandbox(t)
+	a := analyze(t, `python3 -c "import socket; socket.create_connection(('203.0.113.9', 8080), 2)"`)
+	e, ok := a.effect("network")
+	if !ok || e.Evidence != "OBSERVED" || !strings.Contains(strings.Join(e.Details, "\n"), "203.0.113.9:8080") {
+		t.Errorf("network effect: %+v", e)
+	}
+}
+
+func TestACleanCommandRecordsNoNetworkAttempts(t *testing.T) {
+	needSandbox(t)
+	if r := simulate(t, `echo hi > /tmp/ss-net-test.txt`); len(r.Net) != 0 {
+		t.Errorf("unexpected attempts: %+v", r.Net)
 	}
 }

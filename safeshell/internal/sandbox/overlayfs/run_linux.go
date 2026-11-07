@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"safeshell/internal/sandbox/netwatch"
 	"strings"
 	"syscall"
 	"time"
@@ -72,7 +73,12 @@ func Run(ctx context.Context, spec sandbox.Spec) (sandbox.Result, error) {
 	cmd := exec.CommandContext(ctx, self, "sandbox-init")
 	cmd.Stdin = bytes.NewReader(req)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	cmd.ExtraFiles = []*os.File{rw}
+	netParent, netChild, err := socketPair()
+	if err != nil {
+		return sandbox.Result{}, err
+	}
+	defer netParent.Close()
+	cmd.ExtraFiles = []*os.File{rw, netChild}
 	cmd.WaitDelay = 2 * time.Second
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID |
@@ -84,15 +90,23 @@ func Run(ctx context.Context, spec sandbox.Spec) (sandbox.Result, error) {
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
 		rw.Close()
+		netChild.Close()
 		return sandbox.Result{}, fmt.Errorf("start sandbox: %w", err)
 	}
 	rw.Close()
+	netChild.Close()
+	attempts := make(chan []sandbox.NetAttempt, 1)
+	go func() { attempts <- superviseNetwork(netParent, cmd.Process.Pid) }()
 	_ = cmd.Wait() // init's own status is not used; it reports on fd 3
 	res := sandbox.Result{
 		Stdout: stdout.String(), Stderr: stderr.String(), Duration: time.Since(start),
 		Truncated: stdout.cut || stderr.cut,
 	}
 
+	select {
+	case res.Net = <-attempts:
+	case <-time.After(time.Second):
+	}
 	var out outcome
 	gotOutcome := json.NewDecoder(rr).Decode(&out) == nil
 	switch {
@@ -201,4 +215,22 @@ func topDirs() []string {
 		}
 	}
 	return out
+}
+
+func socketPair() (parent, child *os.File, err error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return os.NewFile(uintptr(fds[0]), "netwatch-parent"), os.NewFile(uintptr(fds[1]), "netwatch-child"), nil
+}
+
+// superviseNetwork waits for the child's seccomp descriptor and answers its
+// notifications until the sandbox exits. No descriptor means no record.
+func superviseNetwork(sock *os.File, pid int) []sandbox.NetAttempt {
+	f, err := netwatch.Take(sock, pid)
+	if err != nil {
+		return nil
+	}
+	return netwatch.Supervise(f)
 }

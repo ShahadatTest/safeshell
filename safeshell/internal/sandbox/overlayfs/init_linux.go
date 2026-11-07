@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"safeshell/internal/sandbox/netwatch"
 	"strings"
 	"syscall"
 )
@@ -36,6 +37,8 @@ func Init() int {
 	_ = syscall.Sethostname([]byte("safeshell"))
 	// No new privileges: setuid programs inside cannot gain anything.
 	_, _, _ = syscall.Syscall(syscall.SYS_PRCTL, 38 /* PR_SET_NO_NEW_PRIVS */, 1, 0)
+
+	watchNetwork() // before the command starts, so it and its children are all watched
 
 	shell := req.Shell
 	if _, err := os.Stat(shell); err != nil {
@@ -233,4 +236,21 @@ func skeleton(root string) error {
 		}
 	}
 	return nil
+}
+
+// watchNetwork installs the network filter and hands its descriptor to the
+// parent through fd 4. If that is impossible the command still runs: the network
+// namespace has no route out either way, only the record of attempts is lost.
+func watchNetwork() {
+	sock := os.NewFile(4, "netwatch")
+	if sock == nil {
+		return
+	}
+	defer sock.Close()
+	f, err := netwatch.Install()
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_ = netwatch.Offer(sock, f)
 }
