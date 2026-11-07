@@ -8,3 +8,4 @@ coverage.*
 *.gguf
 *.part
 safeshell/dist/
+node_modules/

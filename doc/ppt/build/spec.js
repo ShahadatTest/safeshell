@@ -293,7 +293,7 @@ slides.push({
 
 // 12 AI layer
 slides.push({
-  notes: 'The AI is optional and swappable. Off: rules only. Local: runs on the user machine, private and offline, using a small open model chosen by available RAM. Cloud: user supplies their own key. Hybrid: local first, cloud only if allowed. Key safety principle: AI proposes, sandbox verifies. AI can raise risk but never lower it.',
+  notes: 'The AI is optional and swappable. Off: rules only. Local: runs on the user machine, private and offline, with a Qwen model the user picks from the /models menu; SafeShell downloads and runs the engine itself on a CUDA GPU, any Vulkan GPU, or the CPU. Cloud: the user pastes their own key for Claude, GPT or Gemini. Hybrid: local first, cloud only if allowed. Key safety principle: AI proposes, sandbox verifies. AI can raise risk but never lower it.',
   els: [
     label('07  THE AI LAYER'), title('AI: local or cloud, your choice'),
     ...[['FaPowerOff', 'Off', 'Rules only. Works fully offline.'], ['FaMicrochip', 'Local', 'Runs on your machine. Private and free.'], ['FaCloud', 'Cloud', 'Your own API key. Best on weak PCs.'], ['FaBalanceScale', 'Hybrid', 'Local first, cloud only if you allow.']].flatMap(([ic, h, b], i) => {
@@ -302,7 +302,7 @@ slides.push({
     }),
     rect(0.5, 3.85, 4.4, 1.2, { fill: P.panel2 }),
     text(0.7, 3.93, 4.0, 0.3, 'Local models', { size: 16, bold: true }),
-    text(0.7, 4.27, 4.0, 0.75, 'Small open models (e.g. Qwen3, 3B to 8B) via llama.cpp, chosen by your RAM.', { size: 14, color: P.muted }),
+    text(0.7, 4.27, 4.0, 0.75, 'Qwen models run by SafeShell itself on CUDA, Vulkan or CPU. Or connect Claude, GPT or Gemini.', { size: 14, color: P.muted }),
     rect(5.1, 3.85, 4.4, 1.2, { fill: P.panel2, line: P.mint }),
     text(5.3, 3.93, 4.0, 0.3, 'AI proposes, sandbox verifies', { size: 16, bold: true, color: P.mint }),
     text(5.3, 4.27, 4.0, 0.75, 'Undo plans are tested in the sandbox first. AI can raise risk, never lower it.', { size: 14, color: P.muted }),
@@ -310,21 +310,21 @@ slides.push({
   ],
 });
 
-// 13 Roadmap
-const phases = ['Foundation', 'Sandbox', 'Shell hook', 'AI layer', 'Rollback', 'Natural language'];
-const targets = [['0 misses', 'dangerous commands (R3/R4) in our test set'], ['Exact', 'files after undo equal the original'], ['< 20 ms', 'added delay for safe commands'], ['Measured', 'plain-English to command accuracy']];
+// 13 Results
+const built = ['Foundation', 'Sandbox', 'Shell hook', 'AI layer', 'Undo', 'English input'];
+const measured = [['92%', 'of 220 commands rated exactly, by an independent test set'], ['88%', 'of 43 plain-English requests turned into the right command'], ['0.5 s', 'to translate a request once the local model is loaded'], ['339', 'automated tests, incl. a real terminal and the real kernel']];
 slides.push({
-  notes: 'Our plan has six build phases. We will measure the project with tests: no missed dangerous commands in our labelled set, exact restoration after undo, very low delay for safe commands, and accuracy of the plain-English translation. These are our targets, not yet results.',
+  notes: 'All six build phases are working. We measured the project. A held-out set of 220 commands, labelled by someone who had not seen our rules, is rated exactly 92 percent of the time, and every miss but one is within one level. We first scored 77 percent on it, then fixed the real gaps it exposed. On 43 plain-English requests the local Qwen 3B model produced a correct command 88 percent of the time, and its failures were fixed. 339 automated tests pass, including tests in a real terminal and against the real Linux kernel.',
   els: [
-    label('08  PLAN'), title('Roadmap and how we measure'),
-    ...phases.flatMap((p, i) => {
+    label('08  RESULTS'), title('What we built and measured'),
+    ...built.flatMap((p, i) => {
       const x = 0.5 + i * 1.52;
       return [rect(x, 1.5, 1.4, 0.95), text(x + 0.12, 1.58, 1.2, 0.22, 'PHASE ' + (i + 1), { size: 10, color: P.mint, font: MONO, bold: true }), text(x + 0.12, 1.85, 1.2, 0.55, p, { size: 14, bold: true })];
     }),
-    text(0.5, 2.75, 6, 0.35, 'Our targets', { size: 18, bold: true }),
-    ...targets.flatMap(([b, c], i) => {
+    text(0.5, 2.75, 6, 0.35, 'Measured, not promised', { size: 18, bold: true }),
+    ...measured.flatMap(([b, c], i) => {
       const x = 0.5 + i * 2.3;
-      return [rect(x, 3.2, 2.1, 1.75, { fill: P.panel }), text(x + 0.2, 3.4, 1.75, 0.5, b, { size: 24, bold: true, color: P.mint }), text(x + 0.2, 4.05, 1.75, 0.85, c, { size: 14, color: P.muted })];
+      return [rect(x, 3.2, 2.1, 1.75, { fill: P.panel }), text(x + 0.2, 3.4, 1.75, 0.5, b, { size: 24, bold: true, color: P.mint }), text(x + 0.2, 4.05, 1.75, 0.85, c, { size: 13, color: P.muted })];
     }),
     ...footer(13),
   ],
@@ -332,7 +332,7 @@ slides.push({
 
 // 14 Future + thanks
 slides.push({
-  notes: 'Future scope: voice control, more tools such as git, docker and kubectl, team policies for labs and servers, and a learning mode. Close by thanking the faculty and inviting questions.',
+  notes: 'Future scope: voice control, native btrfs and ZFS snapshots, more tool previews, team policies for labs and servers, and a learning mode. Close by thanking the faculty and inviting questions.',
   els: [
     label('09  FUTURE'), title('Where this goes next'),
     ...[['FaMicrophone', 'Voice control', 'Speak it, same safety checks.'], ['FaCodeBranch', 'More tools', 'git, docker, kubectl.'], ['FaUsers', 'Team policies', 'Shared rules for labs and servers.'], ['FaGraduationCap', 'Learning mode', 'Teaches real commands.']].flatMap(([ic, h, b], i) => {
