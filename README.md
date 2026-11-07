@@ -7,6 +7,7 @@ confirmed or made undoable before it can hurt anything.</p>
 <p align="center">
   <a href="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/samarthsinh2660/safeshell/releases"><img alt="Release" src="https://img.shields.io/github/v/release/samarthsinh2660/safeshell?include_prereleases"></a>
+  <a href="https://codecov.io/gh/samarthsinh2660/safeshell"><img alt="Coverage" src="https://codecov.io/gh/samarthsinh2660/safeshell/graph/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg"></a>
   <img alt="Linux" src="https://img.shields.io/badge/platform-linux%20amd64%20%7C%20arm64-lightgrey">
   <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8">
