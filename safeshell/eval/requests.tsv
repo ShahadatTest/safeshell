@@ -35,7 +35,7 @@ what does chmod 755 mean	-	-	Q
 what is the difference between rm and rmdir	-	-	Q
 how do i exit vim	-	-	Q
 show me the environment variables	env|printenv|export -p|set	-	R0
-what files changed in the last day here	find.*(-mtime|-mmin|-newermt).*(-1|0|1440)	-	R0
+what files changed in the last day here	find.*(-mtime|-mmin|-newermt).*(-1|0|1440)|git (log|diff|status).*(day|yesterday|24)	-	R0
 replace foo with bar in config.txt	sed.*foo.*bar.*config\.txt	-	R2
 append the text done to log.txt	(echo|printf).*done.*>>.*log\.txt	-	R1
 show the contents of /etc/hostname	cat.*hostname	-	R0

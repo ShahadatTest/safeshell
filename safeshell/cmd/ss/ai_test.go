@@ -164,3 +164,33 @@ func TestGuardLetsEnglishFallThroughWhenAIIsOff(t *testing.T) {
 		t.Errorf("an explicit ? with AI off must say so, not run: %d %q", code, out)
 	}
 }
+
+func TestRunnableRecognisesRealCommandsAndRejectsAdvice(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"ls -la": true, "cd /tmp": true, "./run.sh": true, "FOO=1 ls": true, "sudo apt install x": true,
+		":q": false, "Press Esc then :q": false, "": false, "definitely-not-a-program --x": false,
+	} {
+		if got := runnable(cmd); got != want {
+			t.Errorf("runnable(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
+func TestAskTurnsAnUnrunnableProposalIntoAdvice(t *testing.T) {
+	useAI(t, fakeAI{reply: `{"command":":q","note":"quits vim"}`}, nil)
+	code, out, errOut := runSS("ask", "how do i exit vim")
+	if code != 1 || out != "" || !strings.Contains(errOut, ":q") || strings.Contains(errOut, "Run it?") {
+		t.Errorf("%d %q %q", code, out, errOut)
+	}
+}
+
+func TestAIReviewSkipsCommandsThatNeedNoDecision(t *testing.T) {
+	a := sampleAnalysis()
+	a.Level, a.Decision = domain.R1, domain.Allow
+	a.Verdict.Level = domain.R1
+	fakeAnalyze(t, a)
+	useAI(t, fakeAI{err: errors.New("must not be called for an R1 command")}, nil)
+	if code, _, errOut := runSS("guard", "--", "mkdir x"); code != 0 || strings.Contains(errOut, "AI review") {
+		t.Errorf("%d %q", code, errOut)
+	}
+}

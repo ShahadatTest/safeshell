@@ -44,14 +44,11 @@ func newModelMenu(in io.Reader, out io.Writer) *modelMenu {
 	}
 }
 
-// installLocal downloads the engine for this machine and the model.
+// installLocal downloads the best engine for this machine (and the CPU one as
+// a fallback) and the model.
 func installLocal(ctx context.Context, cfg config.Config, m models.Model, w io.Writer) error {
 	d := runtime.DefaultDirs()
-	b, ok := runtime.Pick(goruntime.GOARCH, cfg.AI.Local.GPU)
-	if !ok {
-		return fmt.Errorf("there is no local engine for %s; use a cloud model instead", goruntime.GOARCH)
-	}
-	if err := d.InstallEngine(ctx, nil, b, w); err != nil {
+	if err := d.InstallPreferred(ctx, nil, goruntime.GOARCH, cfg.AI.Local.GPU, w); err != nil {
 		return err
 	}
 	return d.InstallModel(ctx, nil, m, w)
@@ -133,12 +130,12 @@ func (m *modelMenu) handle(ctx context.Context, c config.Config, f []string) {
 		m.save(c, "Mode is now "+f[0]+".")
 		return
 	case "key":
-		if p, ok := m.cloudAt(f, 1); ok {
+		if p, ok := m.cloudAt(f); ok {
 			m.connect(ctx, c, p, true)
 		}
 		return
 	case "model":
-		if p, ok := m.cloudAt(f, 1); ok && len(f) == 3 {
+		if p, ok := m.cloudAt(f); ok && len(f) == 3 {
 			c.AI.Cloud.Provider, c.AI.Cloud.Model = p.ID, f[2]
 			m.save(c, p.Title+" will use the model "+f[2]+".")
 		} else if ok {
@@ -157,14 +154,17 @@ func (m *modelMenu) handle(ctx context.Context, c config.Config, f []string) {
 	}
 }
 
-func (m *modelMenu) cloudAt(f []string, i int) (providers.Provider, bool) {
-	n, err := strconv.Atoi(strings.Join(f[min(i, len(f)-1):min(i+1, len(f))], ""))
-	k := n - len(models.Catalog) - 1
-	if err != nil || k < 0 || k >= len(providers.All) {
-		fmt.Fprintf(m.out, "That needs a cloud model number (%d to %d).\n", len(models.Catalog)+1, len(models.Catalog)+len(providers.All))
-		return providers.Provider{}, false
+// cloudAt reads the cloud model number in f[1].
+func (m *modelMenu) cloudAt(f []string) (providers.Provider, bool) {
+	if len(f) >= 2 {
+		if n, err := strconv.Atoi(f[1]); err == nil {
+			if k := n - len(models.Catalog) - 1; k >= 0 && k < len(providers.All) {
+				return providers.All[k], true
+			}
+		}
 	}
-	return providers.All[k], true
+	fmt.Fprintf(m.out, "That needs a cloud model number (%d to %d).\n", len(models.Catalog)+1, len(models.Catalog)+len(providers.All))
+	return providers.Provider{}, false
 }
 
 func (m *modelMenu) useLocal(ctx context.Context, c config.Config, md models.Model) {
@@ -195,7 +195,11 @@ func (m *modelMenu) connect(ctx context.Context, c config.Config, p providers.Pr
 			return
 		}
 		fmt.Fprintln(m.out, "Checking the key...")
-		if err := m.check(p, k, c.AI.Cloud.Model); err != nil {
+		model := ""
+		if c.AI.Cloud.Provider == p.ID { // a model name set for another provider would not exist here
+			model = c.AI.Cloud.Model
+		}
+		if err := m.check(p, k, model); err != nil {
 			fmt.Fprintln(m.out, "The key did not work:", err)
 			return
 		}
@@ -325,4 +329,43 @@ func runBench(c config.Config, args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "\n%s: %d of %d correct (%d%%), %d too dangerous, %.1fs per request on average\n",
 		res.Backend, res.Passed(), n, res.Passed()*100/max(n, 1), res.Unsafe(), total.Seconds()/float64(max(n, 1)))
 	return 0
+}
+
+// doctorAI says which engine the local AI would use on this machine and what is installed.
+func doctorAI(w io.Writer) {
+	c, err := config.Load(config.Path())
+	if err != nil {
+		fmt.Fprintln(w, "\nAI settings are broken:", err)
+		return
+	}
+	d := runtime.DefaultDirs()
+	fmt.Fprintf(w, "\nLocal AI (mode %s, gpu setting %s)\n", c.AI.Mode, c.AI.Local.GPU)
+	if drv := runtime.NvidiaDriver(); drv > 0 {
+		fmt.Fprintf(w, "  info     %-26s driver %d\n", "NVIDIA graphics card", drv)
+	} else {
+		fmt.Fprintf(w, "  info     %-26s none found\n", "NVIDIA graphics card")
+	}
+	fmt.Fprintf(w, "  info     %-26s %v\n", "Vulkan loader", runtime.HasVulkan())
+	var order, have []string
+	for _, b := range runtime.Candidates(goruntime.GOARCH, c.AI.Local.GPU) {
+		order = append(order, b.Variant)
+		if d.EngineInstalled(b) {
+			have = append(have, b.Variant)
+		}
+	}
+	if len(order) == 0 {
+		fmt.Fprintf(w, "  MISSING  %-26s none for %s: use a cloud model\n", "local engine", goruntime.GOARCH)
+		return
+	}
+	fmt.Fprintf(w, "  info     %-26s %s (best first)\n", "engines it would try", strings.Join(order, ", "))
+	fmt.Fprintf(w, "  info     %-26s %s\n", "engines installed", orNone(have))
+	md, _ := models.Find(c.AI.Local.Model)
+	fmt.Fprintf(w, "  info     %-26s %s, downloaded: %v\n", "model", md.Title, d.ModelInstalled(md))
+}
+
+func orNone(s []string) string {
+	if len(s) == 0 {
+		return "none yet (run: ss ai setup)"
+	}
+	return strings.Join(s, ", ")
 }

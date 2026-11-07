@@ -96,7 +96,9 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 	case "hook":
 		return runHook(args[1:], stdout, stderr)
 	case "doctor":
-		return doctor(stdout, probe())
+		code := doctor(stdout, probe())
+		doctorAI(stdout)
+		return code
 	default:
 		fmt.Fprintf(stderr, "ss: unknown command %q\n\n%s", args[0], usage)
 		return 2

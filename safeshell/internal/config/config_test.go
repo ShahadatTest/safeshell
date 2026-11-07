@@ -41,6 +41,7 @@ func TestRejectsBadValues(t *testing.T) {
 		"json":     `{`,
 		"model":    `{"ai":{"local":{"model":"gpt-9000"}}}`,
 		"provider": `{"ai":{"cloud":{"provider":"acme"}}}`,
+		"gpu":      `{"ai":{"local":{"gpu":"metal"}}}`,
 	} {
 		if _, err := Load(write(t, s)); err == nil {
 			t.Errorf("%s accepted", name)

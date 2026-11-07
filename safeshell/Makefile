@@ -26,8 +26,11 @@ fmt:
 	gofmt -l -w .
 
 # Everything that must pass before a commit.
-check: vet test
+check: vet
 	@test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
+	go test -race ./...
+	GOOS=linux GOARCH=arm64 go vet ./...
+	GOOS=linux GOARCH=riscv64 go vet ./...
 
 clean:
 	rm -rf bin coverage.out

@@ -46,6 +46,7 @@ func init() {
 		"shutdown": rulePower, "reboot": rulePower, "halt": rulePower, "poweroff": rulePower, "telinit": rulePower,
 		"systemctl": ruleSystemctl, "service": ruleService,
 		"sed": ruleSed, "find": ruleFind, "tee": ruleTee,
+		"awk": ruleAwk, "gawk": ruleAwk, "mawk": ruleAwk, "nawk": ruleAwk,
 		"git": ruleGit, "docker": ruleDocker, "podman": ruleDocker, "kubectl": ruleKubectl,
 		"terraform": ruleTerraform, "tofu": ruleTerraform,
 		"aws": ruleCloud, "gcloud": ruleCloud, "az": ruleCloud,

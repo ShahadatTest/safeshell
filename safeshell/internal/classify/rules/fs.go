@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	"safeshell/internal/domain"
@@ -139,4 +140,18 @@ func ruleUnzip(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R2, c, "Extracts and overwrites existing files without asking."))
 	}
 	return one(fnd(R1, c, "Extracts an archive."))
+}
+
+var awkWrites = regexp.MustCompile(`(print|printf)[^;}|]*>>?\s*["/$a-zA-Z]|system\s*\(|\|\s*getline|\|&|"\s*\|\s*(print|printf)|print[^;}]*\|\s*"`)
+
+// ruleAwk: awk reads and prints, but its program can also write files and run commands.
+func ruleAwk(c shellparse.Command, f flags) []Finding {
+	prog := strings.Join(c.Args, " ")
+	switch {
+	case f.has('i', "inplace") || strings.Contains(prog, "-i inplace") || strings.Contains(prog, "-i  inplace"):
+		return one(fnd(R2, c, "Edits files in place. The original text is not kept."))
+	case awkWrites.MatchString(prog):
+		return one(fnd(R2, c, "The awk program writes to files or runs other commands."))
+	}
+	return one(fnd(R0, c, "Only reads and prints text."))
 }

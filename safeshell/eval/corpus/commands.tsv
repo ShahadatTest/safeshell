@@ -264,3 +264,9 @@ R3	cd $X && rm -rf *
 R3	if true; then cd /; fi; rm -rf *	
 R4	cd / && cd etc && rm -rf *	
 R3	cd / && cd tmp && rm -rf *	
+R0	ip a | grep inet | grep -v 127.0.0.1 | awk '{print $2}' | cut -d'/' -f1	
+R0	awk '{print $1}' access.log	
+R0	awk -F: '$3 > 1000 {print $1}' /etc/passwd	
+R2	awk '{print $1 > "out.txt"}' in.txt	
+R2	awk 'BEGIN{system("rm -rf build")}'	
+R2	gawk -i inplace '{gsub(/a/,"b")}1' f.txt	

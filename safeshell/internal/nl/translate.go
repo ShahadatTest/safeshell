@@ -21,7 +21,8 @@ Rules:
 - Prefer the safest command that does the job: list or preview before deleting, trash-put instead of rm when available, no sudo unless required, never add -f or -y the user did not ask for.
 - Do not chain unrelated steps. One command (pipes and && are fine). It must fit on one line.
 - Relative paths are relative to the working directory given. Use the directory listing to pick real file names.
-- If the user asks a question that is not a task (what does X mean, how does Y work), put a short answer in "answer" and leave "command" empty.
+- If the user asks a question that is not a task (what does X mean, how does Y work, how do I quit an editor), put a short answer in "answer" and leave "command" empty. "command" must always be something that can be typed into a bash prompt and run.
+- Never refuse in prose. If a request is dangerous (wiping a disk or the home folder), leave "command" empty and explain the risk in "answer".
 - If the request is unclear, leave "command" empty and say what is missing in "answer".
 - SafeShell will check, simulate and ask the user before anything risky runs, so do not refuse a legitimate request; just choose the safe form of it.
 
@@ -98,17 +99,13 @@ func Translate(ctx context.Context, b ai.Backend, request string, env Env) (Resu
 	if request == "" {
 		return Result{}, errors.New("nothing to translate")
 	}
-	out, err := b.Complete(ctx, system, env.render()+"<request>"+request+"</request>")
+	prompt := env.render() + "<request>" + request + "</request>"
+	raw, err := ask(ctx, b, prompt)
+	if errors.Is(err, errNotJSON) { // small models sometimes ramble; one firm reminder usually fixes it
+		raw, err = ask(ctx, b, prompt+"\nReply with the JSON object only.")
+	}
 	if err != nil {
 		return Result{}, err
-	}
-	i, j := strings.Index(out, "{"), strings.LastIndex(out, "}")
-	if i < 0 || j < i {
-		return Result{}, errors.New("the model did not return the expected JSON")
-	}
-	var raw struct{ Command, Note, Answer string }
-	if err := json.Unmarshal([]byte(out[i:j+1]), &raw); err != nil {
-		return Result{}, errors.New("the model did not return the expected JSON")
 	}
 	cmd := strings.TrimSpace(raw.Command)
 	r := Result{Command: cmd, Note: strings.TrimSpace(clean(raw.Note, 300)), Answer: strings.TrimSpace(clean(raw.Answer, 600))}
@@ -143,4 +140,21 @@ func LooksLikeRequest(line string, firstWordIsCommand bool) (text string, ok boo
 		return "", false
 	}
 	return line, true
+}
+
+var errNotJSON = errors.New("the model did not return the expected JSON")
+
+type reply struct{ Command, Note, Answer string }
+
+func ask(ctx context.Context, b ai.Backend, prompt string) (reply, error) {
+	out, err := b.Complete(ctx, system, prompt)
+	if err != nil {
+		return reply{}, err
+	}
+	i, j := strings.Index(out, "{"), strings.LastIndex(out, "}")
+	var r reply
+	if i < 0 || j < i || json.Unmarshal([]byte(out[i:j+1]), &r) != nil {
+		return reply{}, errNotJSON
+	}
+	return r, nil
 }

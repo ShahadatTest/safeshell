@@ -3,3 +3,7 @@ bin/
 *.test
 *.out
 coverage.*
+*.tgz
+*.tar.gz
+*.gguf
+*.part

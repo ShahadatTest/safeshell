@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,13 @@ type state struct {
 	PID   int    `json:"pid"`
 	Port  int    `json:"port"`
 	Model string `json:"model"`
+	Key   string `json:"key"` // the server only answers requests that carry it
+}
+
+// Endpoint is how to reach a running server.
+type Endpoint struct {
+	Port int
+	Key  string
 }
 
 func (d Dirs) statePath() string { return filepath.Join(d.State, "llama.json") }
@@ -57,26 +66,25 @@ func healthy(ctx context.Context, port int) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// Ensure returns the base URL (".../v1" is added by the caller) of a running
-// server for spec, starting one if needed. Starts are serialised with a lock
+// Ensure returns the endpoint of a running server for spec, starting one if needed. Starts are serialised with a lock
 // so two shells opening at once do not launch two servers.
-func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (port int, err error) {
+func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (Endpoint, error) {
 	if err := os.MkdirAll(d.State, 0o700); err != nil {
-		return 0, err
+		return Endpoint{}, err
 	}
 	lock, err := os.OpenFile(filepath.Join(d.State, "llama.lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return 0, err
+		return Endpoint{}, err
 	}
 	defer lock.Close()
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return 0, err
+		return Endpoint{}, err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 
 	if s, ok := d.readState(); ok && alive(s.PID) {
 		if s.Model == spec.Model && healthy(ctx, s.Port) {
-			return s.Port, nil
+			return Endpoint{s.Port, s.Key}, nil
 		}
 		_ = syscall.Kill(s.PID, syscall.SIGTERM) // a different model was asked for, or it is wedged
 		time.Sleep(300 * time.Millisecond)
@@ -84,13 +92,17 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (port int, e
 	if log != nil {
 		fmt.Fprintln(log, "Starting the local AI model...")
 	}
-	port, err = freePort()
+	port, err := freePort()
 	if err != nil {
-		return 0, err
+		return Endpoint{}, err
+	}
+	key, err := randomKey()
+	if err != nil {
+		return Endpoint{}, err
 	}
 	logf, _ := os.OpenFile(filepath.Join(d.State, "llama.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	args := []string{"-m", spec.Model, "--host", "127.0.0.1", "--port", strconv.Itoa(port),
-		"-c", "4096", "--parallel", "1", "--no-webui", "--sleep-idle-seconds", strconv.Itoa(IdleSeconds)}
+		"--api-key", key, "-c", "4096", "--parallel", "1", "--no-webui", "--sleep-idle-seconds", strconv.Itoa(IdleSeconds)}
 	if !spec.GPU {
 		args = append(args, "-ngl", "0")
 	}
@@ -100,26 +112,26 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (port int, e
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // outlives the shell command that started it
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("could not start the local engine: %w", err)
+		return Endpoint{}, fmt.Errorf("could not start the local engine: %w", err)
 	}
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
-	b, _ := json.Marshal(state{PID: cmd.Process.Pid, Port: port, Model: spec.Model})
+	b, _ := json.Marshal(state{PID: cmd.Process.Pid, Port: port, Model: spec.Model, Key: key})
 	_ = os.WriteFile(d.statePath(), b, 0o600)
 
 	for end := time.Now().Add(180 * time.Second); time.Now().Before(end); {
 		select {
 		case <-exited:
-			return 0, fmt.Errorf("the local engine stopped while starting (see %s)", filepath.Join(d.State, "llama.log"))
+			return Endpoint{}, fmt.Errorf("the local engine stopped while starting (see %s)", filepath.Join(d.State, "llama.log"))
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return Endpoint{}, ctx.Err()
 		case <-time.After(300 * time.Millisecond):
 		}
 		if healthy(ctx, port) {
-			return port, nil
+			return Endpoint{port, key}, nil
 		}
 	}
-	return 0, errors.New("the local engine did not become ready within 3 minutes")
+	return Endpoint{}, errors.New("the local engine did not become ready within 3 minutes")
 }
 
 // Stop ends the background server, if one is running.
@@ -140,6 +152,14 @@ func (d Dirs) Running() (model string, ok bool) {
 		return "", false
 	}
 	return s.Model, true
+}
+
+func randomKey() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func freePort() (int, error) {

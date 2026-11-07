@@ -1,0 +1,24 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: safeshell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: safeshell/go.mod
+      - name: Vet, format, race-detector tests, cross-architecture vet
+        run: make check
+      - name: Short fuzz runs
+        run: make fuzz FUZZTIME=15s
+      # The sandbox needs user namespaces, which GitHub's runners restrict under
+      # AppArmor; those tests skip themselves there and run locally via `make integration`.
+      - name: Integration tests (skip without a sandbox)
+        run: make integration

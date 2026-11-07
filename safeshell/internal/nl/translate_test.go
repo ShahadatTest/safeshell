@@ -95,3 +95,30 @@ func TestLooksLikeRequest(t *testing.T) {
 		}
 	}
 }
+
+type sequence struct {
+	replies []string
+	calls   []string
+}
+
+func (s *sequence) Name() string { return "seq" }
+func (s *sequence) Complete(_ context.Context, _, user string) (string, error) {
+	s.calls = append(s.calls, user)
+	r := s.replies[0]
+	if len(s.replies) > 1 {
+		s.replies = s.replies[1:]
+	}
+	return r, nil
+}
+
+func TestOneRetryWhenTheModelRamblesInsteadOfJSON(t *testing.T) {
+	s := &sequence{replies: []string{"Sure, you could look for old logs with find.", `{"command":"find . -mtime +7 -name '*.log'"}`}}
+	r, err := Translate(context.Background(), s, "clear old logs", env)
+	if err != nil || r.Command != "find . -mtime +7 -name '*.log'" || len(s.calls) != 2 || !strings.Contains(s.calls[1], "JSON object only") {
+		t.Fatalf("%+v %v calls=%d", r, err, len(s.calls))
+	}
+	s = &sequence{replies: []string{"no json here"}}
+	if _, err := Translate(context.Background(), s, "x", env); err == nil || len(s.calls) != 2 {
+		t.Errorf("a second failure must be reported after exactly one retry: %v calls=%d", err, len(s.calls))
+	}
+}

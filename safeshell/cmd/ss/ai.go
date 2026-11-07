@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 // aiReview lets the model read the sandbox result and raise the risk. Any
 // failure is shown but never blocks the command.
 func aiReview(a *engine.Analysis, stderr io.Writer) {
-	if a.Level == domain.R0 || a.Level >= domain.R4 {
+	// Only commands that already need a decision are worth a model call: it can
+	// take a second or more, and it can only raise a level that matters.
+	if a.Level < domain.R2 || a.Level >= domain.R4 {
 		return
 	}
 	b, err := backend()
@@ -96,6 +99,12 @@ func askLine(request, cwd string, stdout, stderr io.Writer, color bool) (code in
 		fmt.Fprintln(stderr, "ss ask:", firstErrLine(err))
 		return 1, !strings.Contains(err.Error(), "ss ai setup") && !strings.Contains(err.Error(), "local engine")
 	}
+	if r.Command != "" && !runnable(r.Command) { // e.g. ":q" for "how do I quit vim": that is advice, not a command
+		r.Answer, r.Command = r.Command, ""
+		if r.Note != "" {
+			r.Answer += "  (" + r.Note + ")"
+		}
+	}
 	if r.Command == "" { // a question: show the answer, run nothing
 		fmt.Fprintln(stderr, r.Answer)
 		return 1, true
@@ -105,4 +114,29 @@ func askLine(request, cwd string, stdout, stderr io.Writer, color bool) (code in
 		fmt.Fprintf(stderr, "          %s\n", r.Note)
 	}
 	return guardLine(r.Command, cwd, stdout, stderr, color, true), true
+}
+
+// shellWords are builtins and keywords that exist without being files on the PATH.
+var shellWords = map[string]bool{"cd": true, "export": true, "source": true, ".": true, "alias": true, "unset": true, "set": true,
+	"echo": true, "printf": true, "read": true, "test": true, "[": true, "[[": true, "type": true, "ulimit": true, "umask": true,
+	"history": true, "exec": true, "eval": true, "pwd": true, "kill": true, "wait": true, "jobs": true, "fg": true, "bg": true,
+	"for": true, "while": true, "if": true, "case": true, "time": true, "true": true, "false": true, "exit": true, "command": true,
+	"declare": true, "local": true, "readonly": true, "shift": true, "trap": true, "sudo": true}
+
+// runnable reports whether the first word of a proposed command is something the shell could run.
+func runnable(cmd string) bool {
+	f := strings.Fields(cmd)
+	if len(f) == 0 {
+		return false
+	}
+	w := f[0]
+	for strings.Contains(w, "=") && len(f) > 1 { // VAR=value command
+		f = f[1:]
+		w = f[0]
+	}
+	if shellWords[w] || strings.HasPrefix(w, "./") || strings.HasPrefix(w, "/") || strings.HasPrefix(w, "~/") || strings.HasPrefix(w, "(") || strings.HasPrefix(w, "{") {
+		return true
+	}
+	_, err := exec.LookPath(w)
+	return err == nil
 }

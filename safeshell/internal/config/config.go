@@ -21,7 +21,7 @@ type Config struct {
 		Mode  ai.Mode `json:"mode"`
 		Local struct {
 			Model string `json:"model"` // a models.Catalog id
-			GPU   string `json:"gpu"`   // auto, on, off
+			GPU   string `json:"gpu"`   // auto, cuda, vulkan, cpu
 		} `json:"local"`
 		Cloud struct {
 			Provider string `json:"provider"` // anthropic, openai, gemini
@@ -70,8 +70,12 @@ func Load(path string) (Config, error) {
 	if _, ok := models.Find(c.AI.Local.Model); !ok {
 		return Config{}, errors.New("ai.local.model " + c.AI.Local.Model + " is not a known model (see /models)")
 	}
-	if c.AI.Local.GPU == "" {
+	switch c.AI.Local.GPU {
+	case "":
 		c.AI.Local.GPU = "auto"
+	case "auto", "cuda", "vulkan", "cpu", "on", "off":
+	default:
+		return Config{}, errors.New("ai.local.gpu must be auto, cuda, vulkan or cpu, not " + c.AI.Local.GPU)
 	}
 	if p := c.AI.Cloud.Provider; p != "" {
 		if _, ok := providers.Find(p); !ok {

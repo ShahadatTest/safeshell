@@ -168,29 +168,68 @@ func TestExtractRefusesEscapes(t *testing.T) {
 	}
 }
 
-func TestPickPrefersVulkanOnlyWhenAvailable(t *testing.T) {
-	old := exists
-	defer func() { exists = old }()
-	exists = func(string) bool { return false }
-	if b, ok := Pick("amd64", "auto"); !ok || b.Variant != "cpu" {
-		t.Errorf("%+v", b)
+func variants(bs []Build) string {
+	var v []string
+	for _, b := range bs {
+		v = append(v, b.Variant)
 	}
-	if b, _ := Pick("amd64", "on"); b.Variant != "vulkan" {
-		t.Error("gpu on")
+	return strings.Join(v, ",")
+}
+
+func machine(t *testing.T, driverText string, vulkan bool) {
+	oe, or := exists, readFile
+	t.Cleanup(func() { exists, readFile = oe, or })
+	exists = func(p string) bool { return vulkan && strings.HasSuffix(p, "libvulkan.so.1") }
+	readFile = func(string) string { return driverText }
+}
+
+const nv595 = "NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  595.99.02  Release Build"
+const nv575 = "NVRM version: NVIDIA UNIX x86_64 Kernel Module  575.57.08  Thu Jul 10"
+const nv535 = "NVRM version: NVIDIA UNIX x86_64 Kernel Module  535.183.01  Sun May 12"
+
+func TestCandidatesPreferTheBestEngineAndAlwaysEndWithCPU(t *testing.T) {
+	for _, tc := range []struct {
+		name, driver, arch, gpu string
+		vulkan                  bool
+		want                    string
+	}{
+		{"new nvidia driver", nv595, "amd64", "auto", true, "cuda13,vulkan,cpu"},
+		{"older nvidia driver", nv575, "amd64", "auto", true, "cuda12,vulkan,cpu"},
+		{"driver too old for cuda", nv535, "amd64", "auto", true, "vulkan,cpu"},
+		{"no nvidia, vulkan loader", "", "amd64", "auto", true, "vulkan,cpu"},
+		{"nothing special", "", "amd64", "auto", false, "cpu"},
+		{"forced cpu", nv595, "amd64", "cpu", true, "cpu"},
+		{"old setting off", nv595, "amd64", "off", true, "cpu"},
+		{"forced cuda", nv595, "amd64", "cuda", true, "cuda13,cpu"},
+		{"forced cuda without nvidia falls to cpu", "", "amd64", "cuda", true, "cpu"},
+		{"forced vulkan even without a loader", "", "amd64", "vulkan", false, "vulkan,cpu"},
+		{"arm64 has no cuda build here", nv595, "arm64", "auto", true, "vulkan,cpu"},
+		{"unknown arch", nv595, "riscv64", "auto", true, ""},
+	} {
+		machine(t, tc.driver, tc.vulkan)
+		if got := variants(Candidates(tc.arch, tc.gpu)); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
 	}
-	exists = func(p string) bool { return strings.HasSuffix(p, "libvulkan.so.1") }
-	if b, _ := Pick("amd64", "auto"); b.Variant != "vulkan" {
-		t.Error("auto with vulkan")
+}
+
+func TestParseNvidiaDriver(t *testing.T) {
+	for in, want := range map[string]int{nv595: 595, nv575: 575, nv535: 535, "": 0, "garbage": 0} {
+		if got := ParseNvidiaDriver(in); got != want {
+			t.Errorf("%q: %d", in, got)
+		}
 	}
-	if b, _ := Pick("amd64", "off"); b.Variant != "cpu" {
-		t.Error("gpu off")
-	}
-	if _, ok := Pick("riscv64", "auto"); ok {
-		t.Error("unsupported arch")
-	}
-	for _, b := range builds {
-		if len(b.SHA) != 64 || !strings.HasPrefix(b.URL(), "https://github.com/ggml-org/llama.cpp/releases/download/"+Tag) {
-			t.Errorf("bad build %+v", b)
+}
+
+func TestEveryBuildIsPinnedAndComplete(t *testing.T) {
+	for k, b := range builds {
+		for _, as := range append([]Asset{b.Main}, b.Extra...) {
+			if len(as.SHA) != 64 || as.Size < 1<<20 || !strings.HasPrefix(as.URL(), "https://github.com/ggml-org/llama.cpp/releases/download/"+Tag+"/") {
+				t.Errorf("%s: bad asset %+v", k, as)
+			}
+		}
+		if strings.HasPrefix(b.Variant, "cuda") && len(b.Extra) == 0 {
+			t.Errorf("%s needs the CUDA runtime libraries", k)
 		}
 	}
 }
@@ -208,7 +247,7 @@ func TestInstallEngineAndModelEndToEndWithFakeServers(t *testing.T) {
 	}))
 	defer srv.Close()
 	d := Dirs{Data: t.TempDir(), State: t.TempDir()}
-	b := Build{Variant: "cpu", Asset: "x.tar.gz", Size: int64(len(ab)), SHA: sum(ab)}
+	b := Build{Variant: "cpu", Main: Asset{Name: "x.tar.gz", Size: int64(len(ab)), SHA: sum(ab)}}
 	// Point the download at the fake server by overriding URL via a client transport.
 	client := &http.Client{Transport: rewrite{srv.URL}}
 	if err := d.InstallEngine(context.Background(), client, b, &strings.Builder{}); err != nil || !d.EngineInstalled(b) {
@@ -241,17 +280,20 @@ func TestEnsureStartsOnceReusesAndRestartsForAnotherModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(p1.Key) < 32 {
+		t.Errorf("the server needs a real access key, got %q", p1.Key)
+	}
 	p2, err := d.Ensure(context.Background(), spec, nil)
 	if err != nil || p2 != p1 {
-		t.Errorf("a healthy server must be reused: %d %d %v", p1, p2, err)
+		t.Errorf("a healthy server must be reused with the same key: %v %v %v", p1, p2, err)
 	}
 	if m, ok := d.Running(); !ok || m != "/m/a.gguf" {
 		t.Errorf("running: %q %v", m, ok)
 	}
 	spec.Model = "/m/b.gguf"
 	p3, err := d.Ensure(context.Background(), spec, nil)
-	if err != nil || p3 == p1 {
-		t.Errorf("another model needs a new server: %d %d %v", p1, p3, err)
+	if err != nil || p3.Port == p1.Port || p3.Key == p1.Key {
+		t.Errorf("another model needs a new server: %v %v %v", p1, p3, err)
 	}
 	if !d.Stop() {
 		t.Error("stop")
