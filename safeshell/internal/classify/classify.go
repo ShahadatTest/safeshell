@@ -109,10 +109,8 @@ func redirectFindings(c shellparse.Command) []Finding {
 		}
 		t := rules.Norm(r.Target)
 		appending := strings.HasSuffix(r.Op, ">>")
-		cmd := c.String()
-		if cmd == "" {
-			cmd = r.Op + " " + r.Target
-		}
+		base := c.String()
+		cmd := strings.TrimSpace(base + " " + r.Op + " " + r.Target)
 		switch {
 		case harmlessTargets[t] || strings.HasPrefix(t, "/dev/fd/"):
 		case rules.IsBlockDevice(t) || t == "/dev/mem" || t == "/dev/kmem":
@@ -128,7 +126,7 @@ func redirectFindings(c shellparse.Command) []Finding {
 			fs = append(fs, finding(R1, cmd, "Appends to "+t+"."))
 		default:
 			fs = append(fs, finding(R2, cmd, "Overwrites "+t+" if it already exists.").
-				WithAlt(strings.Replace(cmd, r.Op+" "+r.Target, ">> "+r.Target, 1), "appends instead of overwriting"))
+				WithAlt(strings.TrimSpace(base+" >> "+r.Target), "appends instead of overwriting"))
 		}
 	}
 	return fs

