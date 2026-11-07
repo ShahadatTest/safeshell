@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -33,6 +34,7 @@ type state struct {
 	Port  int    `json:"port"`
 	Model string `json:"model"`
 	Key   string `json:"key"` // the server only answers requests that carry it
+	Bin   string `json:"bin"` // the executable, to recognise the process again
 }
 
 // Endpoint is how to reach a running server.
@@ -52,7 +54,20 @@ func (d Dirs) readState() (state, bool) {
 	return s, true
 }
 
-func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
+// running reports whether s still describes a live engine. A saved PID can
+// outlive its process (a reboot, a crash) and be reused by something else, so
+// the process must also be running the same executable.
+func (s state) running() bool {
+	if s.PID <= 0 || syscall.Kill(s.PID, 0) != nil {
+		return false
+	}
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", s.PID))
+	if err != nil {
+		return false
+	}
+	exe, _, _ := strings.Cut(string(b), "\x00")
+	return s.Bin != "" && exe == s.Bin
+}
 
 func healthy(ctx context.Context, port int) bool {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -82,7 +97,7 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (Endpoint, e
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 
-	if s, ok := d.readState(); ok && alive(s.PID) {
+	if s, ok := d.readState(); ok && s.running() {
 		if s.Model == spec.Model && healthy(ctx, s.Port) {
 			return Endpoint{s.Port, s.Key}, nil
 		}
@@ -101,8 +116,12 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (Endpoint, e
 		return Endpoint{}, err
 	}
 	logf, _ := os.OpenFile(filepath.Join(d.State, "llama.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	keyFile := filepath.Join(d.State, "llama.key") // not on the command line, where any user could read it with ps
+	if err := os.WriteFile(keyFile, []byte(key), 0o600); err != nil {
+		return Endpoint{}, err
+	}
 	args := []string{"-m", spec.Model, "--host", "127.0.0.1", "--port", strconv.Itoa(port),
-		"--api-key", key, "-c", "4096", "--parallel", "1", "--no-webui", "--sleep-idle-seconds", strconv.Itoa(IdleSeconds)}
+		"--api-key-file", keyFile, "-c", "4096", "--parallel", "1", "--no-webui", "--sleep-idle-seconds", strconv.Itoa(IdleSeconds)}
 	if !spec.GPU {
 		args = append(args, "-ngl", "0")
 	}
@@ -116,7 +135,7 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (Endpoint, e
 	}
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
-	b, _ := json.Marshal(state{PID: cmd.Process.Pid, Port: port, Model: spec.Model, Key: key})
+	b, _ := json.Marshal(state{PID: cmd.Process.Pid, Port: port, Model: spec.Model, Key: key, Bin: spec.Bin})
 	_ = os.WriteFile(d.statePath(), b, 0o600)
 
 	for end := time.Now().Add(180 * time.Second); time.Now().Before(end); {
@@ -137,7 +156,7 @@ func (d Dirs) Ensure(ctx context.Context, spec Spec, log io.Writer) (Endpoint, e
 // Stop ends the background server, if one is running.
 func (d Dirs) Stop() bool {
 	s, ok := d.readState()
-	if !ok || !alive(s.PID) {
+	if !ok || !s.running() {
 		return false
 	}
 	_ = syscall.Kill(s.PID, syscall.SIGTERM)
@@ -148,7 +167,7 @@ func (d Dirs) Stop() bool {
 // Running reports the background server's state without starting it.
 func (d Dirs) Running() (model string, ok bool) {
 	s, found := d.readState()
-	if !found || !alive(s.PID) {
+	if !found || !s.running() {
 		return "", false
 	}
 	return s.Model, true

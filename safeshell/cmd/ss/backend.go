@@ -14,7 +14,7 @@ import (
 
 // backend returns the configured AI, or nil when it is off. Tests replace it.
 var backend = func() (ai.Backend, error) {
-	c, err := config.Load(config.Path())
+	c, err := config.LoadEffective(config.Path())
 	if err != nil {
 		return nil, err
 	}

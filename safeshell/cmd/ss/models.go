@@ -234,7 +234,7 @@ func runModels(in io.Reader, out io.Writer) int {
 
 // runAI is `ss ai setup|status|stop`.
 func runAI(args []string, stdout, stderr io.Writer) int {
-	c, err := config.Load(config.Path())
+	c, err := config.LoadEffective(config.Path())
 	if err != nil {
 		fmt.Fprintln(stderr, "ss ai:", err)
 		return 1
@@ -333,7 +333,7 @@ func runBench(c config.Config, args []string, stdout, stderr io.Writer) int {
 
 // doctorAI says which engine the local AI would use on this machine and what is installed.
 func doctorAI(w io.Writer) {
-	c, err := config.Load(config.Path())
+	c, err := config.LoadEffective(config.Path())
 	if err != nil {
 		fmt.Fprintln(w, "\nAI settings are broken:", err)
 		return

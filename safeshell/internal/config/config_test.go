@@ -30,8 +30,15 @@ func TestLoadsValuesAndEnvOverridesMode(t *testing.T) {
 		t.Fatalf("%+v %v", c, err)
 	}
 	t.Setenv("SAFESHELL_AI", "off")
-	if c, _ := Load(p); c.AI.Mode != ai.Off {
+	if c, _ := LoadEffective(p); c.AI.Mode != ai.Off {
 		t.Error("env override")
+	}
+	if c, _ := Load(p); c.AI.Mode != ai.Hybrid {
+		t.Error("Load must return what is saved, not a temporary override")
+	}
+	t.Setenv("SAFESHELL_AI", "sometimes")
+	if _, err := LoadEffective(p); err == nil {
+		t.Error("a bad override must be reported")
 	}
 }
 

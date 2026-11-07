@@ -41,7 +41,25 @@ func dir() string {
 // Path is the config file.
 func Path() string { return filepath.Join(dir(), "config.json") }
 
-// Load reads path. A missing file gives defaults; SAFESHELL_AI overrides the mode.
+// LoadEffective is Load plus the SAFESHELL_AI override. Use it to decide how to
+// behave; never save its result, or a temporary override becomes permanent.
+func LoadEffective(path string) (Config, error) {
+	c, err := Load(path)
+	if err != nil {
+		return c, err
+	}
+	if m := os.Getenv("SAFESHELL_AI"); m != "" {
+		switch ai.Mode(m) {
+		case ai.Auto, ai.Off, ai.Local, ai.Cloud, ai.Hybrid:
+			c.AI.Mode = ai.Mode(m)
+		default:
+			return Config{}, errors.New("SAFESHELL_AI must be auto, off, local, cloud or hybrid, not " + m)
+		}
+	}
+	return c, nil
+}
+
+// Load reads path exactly as saved (plus defaults). A missing file gives defaults.
 func Load(path string) (Config, error) {
 	var c Config
 	b, err := os.ReadFile(path)
@@ -53,9 +71,6 @@ func Load(path string) (Config, error) {
 		if err := json.Unmarshal(b, &c); err != nil {
 			return Config{}, errors.New(path + ": " + err.Error())
 		}
-	}
-	if m := os.Getenv("SAFESHELL_AI"); m != "" {
-		c.AI.Mode = ai.Mode(m)
 	}
 	switch c.AI.Mode {
 	case "":

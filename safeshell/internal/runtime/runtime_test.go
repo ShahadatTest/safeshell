@@ -6,13 +6,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -312,5 +315,48 @@ func TestEnsureReportsAnEngineThatCrashes(t *testing.T) {
 	}
 	if _, err := d.Ensure(context.Background(), Spec{Bin: "/nonexistent/llama-server"}, nil); err == nil {
 		t.Error("missing binary")
+	}
+}
+
+func TestAStaleStateFileNeverKillsAnUnrelatedProcess(t *testing.T) {
+	d := Dirs{Data: t.TempDir(), State: t.TempDir()}
+	victim := exec.Command("sleep", "30")
+	if err := victim.Start(); err != nil {
+		t.Skip("no sleep:", err)
+	}
+	defer func() { _ = victim.Process.Kill(); _ = victim.Wait() }()
+	// The state file names the victim's PID as if it were our engine (a reused PID after a reboot).
+	b, _ := json.Marshal(state{PID: victim.Process.Pid, Port: 1, Model: "/m/a.gguf", Bin: "/home/me/engine/llama-server"})
+	os.WriteFile(d.statePath(), b, 0o600)
+	if _, ok := d.Running(); ok {
+		t.Error("an unrelated process was taken for the engine")
+	}
+	if d.Stop() {
+		t.Error("Stop claimed to stop a process that is not ours")
+	}
+	if victim.Process.Signal(syscall.Signal(0)) != nil {
+		t.Error("the unrelated process was killed")
+	}
+}
+
+func TestTheAccessKeyIsNotOnTheCommandLine(t *testing.T) {
+	t.Setenv("SS_FAKE_LLAMA", "1")
+	d := Dirs{Data: t.TempDir(), State: t.TempDir()}
+	t.Cleanup(func() { d.Stop() })
+	ep, err := d.Ensure(context.Background(), Spec{Bin: os.Args[0], Model: "/m/a.gguf"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := d.readState()
+	cmdline, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", s.PID))
+	if strings.Contains(string(cmdline), ep.Key) {
+		t.Error("the key is visible to every user through ps")
+	}
+	kf := filepath.Join(d.State, "llama.key")
+	if st, err := os.Stat(kf); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("key file: %v %v", st, err)
+	}
+	if b, _ := os.ReadFile(kf); string(b) != ep.Key {
+		t.Error("key file does not hold the key")
 	}
 }

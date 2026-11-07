@@ -213,3 +213,34 @@ func TestSlashCommandsWorkInsideTheTerminal(t *testing.T) {
 	sh.send("echo still-works\r")
 	sh.waitFor(t, "still-works\r\n")
 }
+
+func TestCtrlJCannotBypassTheGuard(t *testing.T) {
+	needSandbox(t)
+	d := t.TempDir()
+	victim := filepath.Join(d, "proj")
+	_ = os.MkdirAll(victim, 0o755)
+	_ = os.WriteFile(filepath.Join(victim, "a.txt"), []byte("x"), 0o644)
+	sh := startBash(t)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("rm -rf " + victim + "\n") // a bare newline is Ctrl-J, which readline also treats as Enter
+	sh.waitFor(t, "[c] cancel")
+	sh.send("c\r")
+	sh.waitFor(t, "Nothing was run")
+	if _, err := os.Stat(filepath.Join(victim, "a.txt")); err != nil {
+		t.Fatal("Ctrl-J ran the command without the guard")
+	}
+}
+
+func TestIfSafeShellItselfFailsTheLineRunsWithAWarningInsteadOfVanishing(t *testing.T) {
+	needSandbox(t)
+	fake := t.TempDir()
+	_ = os.WriteFile(filepath.Join(fake, "ss"), []byte("#!/bin/sh\nexit 7\n"), 0o755)
+	sh := startBash(t)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("export PATH=" + fake + ":$PATH\r") // from now on `ss` is broken
+	sh.send("echo still-ran\r")
+	sh.waitFor(t, "NOT checked")
+	sh.waitFor(t, "still-ran\r\n")
+}

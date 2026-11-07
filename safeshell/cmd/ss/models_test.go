@@ -245,3 +245,12 @@ func TestBenchNeedsAnActiveModelAndRejectsUnknownOnes(t *testing.T) {
 		t.Errorf("%d", code)
 	}
 }
+
+func TestAnEnvironmentOverrideIsNeverSavedByTheMenu(t *testing.T) {
+	fx := newMenu(t, "model 6 gpt-4.1\nq\n", "", nil)
+	t.Setenv("SAFESHELL_AI", "off")
+	fx.m.Run(context.Background())
+	if m := fx.cfg(t).AI.Mode; m != ai.Auto {
+		t.Errorf("the temporary SAFESHELL_AI=off was written to the config as %q", m)
+	}
+}

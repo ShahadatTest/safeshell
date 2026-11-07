@@ -31,6 +31,9 @@ func Take(sock *os.File, pid int) (*os.File, error) {
 	if _, err := io.ReadFull(sock, n[:]); err != nil {
 		return nil, err
 	}
+	// Whatever happens next, release the child: it is waiting for this byte, and
+	// the command must still run (unrecorded) if the descriptor cannot be taken.
+	defer sock.Write([]byte{1})
 	pidfd, err := unix.PidfdOpen(pid, 0)
 	if err != nil {
 		return nil, fmt.Errorf("pidfd_open: %w", err)
@@ -40,6 +43,5 @@ func Take(sock *os.File, pid int) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pidfd_getfd: %w", err)
 	}
-	_, _ = sock.Write([]byte{1})
 	return os.NewFile(uintptr(fd), "seccomp-notify"), nil
 }

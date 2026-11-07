@@ -19,10 +19,16 @@ func main() {
 	flag.Bool("no-webui", false, "")
 	flag.String("sleep-idle-seconds", "", "")
 	flag.String("ngl", "", "")
+	keyFile := flag.String("api-key-file", "", "")
 	flag.Parse()
+	key, _ := os.ReadFile(*keyFile)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"status":"ok"}`)) })
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		if len(key) == 0 || r.Header.Get("Authorization") != "Bearer "+string(key) { // like the real server, refuse callers without the key
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		b, _ := json.Marshal(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": os.Getenv("FAKE_REPLY")}}}})
 		w.Write(b)
 	})

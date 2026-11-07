@@ -70,19 +70,7 @@ func (e Env) render() string {
 }
 
 func clean(s string, max int) string {
-	for _, t := range []string{"</environment>", "</request>"} {
-		s = strings.ReplaceAll(s, t, "")
-	}
-	s = strings.Map(func(r rune) rune {
-		if r < 32 || r == 127 {
-			return ' '
-		}
-		return r
-	}, s)
-	if len(s) > max {
-		s = s[:max] + "..."
-	}
-	return s
+	return ai.Clean(s, max, "</environment>", "</request>")
 }
 
 // Result is a proposed command, or an answer when the person asked a question.

@@ -76,3 +76,28 @@ func (r redacting) Complete(ctx context.Context, system, user string) (string, e
 
 // Redacting wraps b so everything it is sent passes through Redact.
 func Redacting(b Backend) Backend { return redacting{b} }
+
+// Clean makes untrusted text safe to place inside a prompt: the given closing
+// tags are removed (repeatedly, so a tag split around another cannot rebuild
+// itself), control characters become spaces, and the length is bounded.
+func Clean(s string, max int, closing ...string) string {
+	for changed := true; changed; {
+		changed = false
+		for _, t := range closing {
+			if strings.Contains(s, t) {
+				s = strings.ReplaceAll(s, t, "")
+				changed = true
+			}
+		}
+	}
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > max {
+		s = s[:max] + "..."
+	}
+	return s
+}

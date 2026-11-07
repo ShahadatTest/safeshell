@@ -74,8 +74,9 @@ func Supervise(fd *os.File) []sandbox.NetAttempt {
 	}
 }
 
-// judge reads the destination out of the caller's memory. A call that names
-// no destination goes on unchanged; anything else is refused.
+// judge decides one notification. A call that names no destination goes on
+// unchanged; anything else is refused. sendmmsg carries several messages and
+// every one is checked.
 func judge(n notif) (*sandbox.NetAttempt, syscall.Errno) {
 	mem, err := os.Open(fmt.Sprintf("/proc/%d/mem", n.PID))
 	if err != nil {
@@ -83,28 +84,53 @@ func judge(n notif) (*sandbox.NetAttempt, syscall.Errno) {
 	}
 	defer mem.Close()
 	read := func(addr uint64, size int) []byte {
+		if size <= 0 || size > 4096 {
+			return nil
+		}
 		b := make([]byte, size)
 		got, _ := mem.ReadAt(b, int64(addr))
 		return b[:got]
 	}
 	a := n.Args
-	var name uint64
-	var nameLen int
-	var data []byte
 	call := map[int32]string{unix.SYS_CONNECT: "connect", unix.SYS_SENDTO: "sendto", unix.SYS_SENDMSG: "sendmsg", unix.SYS_SENDMMSG: "sendmmsg"}[n.NR]
+	// addrlen and vlen are 32-bit in the kernel; the upper register bits are not ours to trust.
 	switch n.NR {
 	case unix.SYS_CONNECT:
-		name, nameLen = a[1], int(a[2])
+		return destination(read, call, a[1], int(uint32(a[2])), nil)
 	case unix.SYS_SENDTO:
-		name, nameLen = a[4], int(a[5])
-		if name != 0 && a[2] > 0 {
+		var data []byte
+		if a[4] != 0 && a[2] > 0 {
 			data = read(a[1], int(min(a[2], 512)))
 		}
-	default: // sendmsg, sendmmsg: msghdr (or the first mmsghdr) holds the name pointer and length
-		if h := read(a[1], 16); len(h) == 16 {
-			name, nameLen = binary.LittleEndian.Uint64(h), int(binary.LittleEndian.Uint32(h[8:]))
+		return destination(read, call, a[4], int(uint32(a[5])), data)
+	case unix.SYS_SENDMSG:
+		return fromMsghdr(read, call, a[1])
+	default: // sendmmsg: an array of {msghdr (56 bytes), msg_len, padding} = 64 bytes each
+		vlen := min(int(uint32(a[2])), 64)
+		var first *sandbox.NetAttempt
+		for i := 0; i < vlen; i++ {
+			att, errno := fromMsghdr(read, call, a[1]+uint64(i)*64)
+			if errno != 0 {
+				return att, errno
+			}
+			if first == nil {
+				first = att
+			}
 		}
+		return first, 0
 	}
+}
+
+// fromMsghdr reads the destination named in a struct msghdr at addr.
+func fromMsghdr(read func(uint64, int) []byte, call string, addr uint64) (*sandbox.NetAttempt, syscall.Errno) {
+	h := read(addr, 16)
+	if len(h) < 16 {
+		return nil, unix.EACCES
+	}
+	return destination(read, call, binary.LittleEndian.Uint64(h), int(binary.LittleEndian.Uint32(h[8:])), nil)
+}
+
+func destination(read func(uint64, int) []byte, call string, name uint64, nameLen int, data []byte) (*sandbox.NetAttempt, syscall.Errno) {
 	if name == 0 {
 		return nil, 0
 	}

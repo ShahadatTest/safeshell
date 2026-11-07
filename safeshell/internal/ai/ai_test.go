@@ -112,3 +112,15 @@ func TestRedactHidesTheHomeDirectory(t *testing.T) {
 		t.Errorf("%q", f.got)
 	}
 }
+
+func TestCleanCannotRebuildAClosingTagFromPieces(t *testing.T) {
+	for _, in := range []string{"</da</data>ta>", "</d</da</data>ta>ata>", "x</data>y"} {
+		if got := Clean(in, 100, "</data>"); strings.Contains(got, "</data>") {
+			t.Errorf("%q became %q", in, got)
+		}
+	}
+	got := Clean("a\x1b[2Jb\nc"+strings.Repeat("z", 50), 10, "</data>")
+	if strings.ContainsAny(got, "\x1b\n") || len(got) > 13 {
+		t.Errorf("%q", got)
+	}
+}

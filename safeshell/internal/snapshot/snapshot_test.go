@@ -165,3 +165,27 @@ func TestRestoreReplacesAFolderThatTookTheNameOfAFile(t *testing.T) {
 		t.Errorf("%v", r.Problems)
 	}
 }
+
+func TestRestoreRebuildsAReadOnlyFolderAndItsContents(t *testing.T) {
+	root, store := tree(t)
+	locked := filepath.Join(root, "locked")
+	write(t, filepath.Join(locked, "inner.txt"), "keep", 0o444)
+	os.Chmod(locked, 0o555) // no write bit: a naive restore cannot put files back into it
+	defer os.Chmod(locked, 0o755)
+	m, err := Create(store, "rm -rf locked", []Target{{Path: locked}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(locked, 0o755)
+	os.RemoveAll(locked)
+	r, err := Restore(store, m.ID)
+	if err != nil || len(r.Problems) != 0 {
+		t.Fatalf("%v %v", err, r.Problems)
+	}
+	if fi, _ := os.Stat(locked); fi.Mode().Perm() != 0o555 {
+		t.Errorf("mode %v", fi.Mode())
+	}
+	if read(t, filepath.Join(locked, "inner.txt")) != "keep" {
+		t.Error("contents lost")
+	}
+}

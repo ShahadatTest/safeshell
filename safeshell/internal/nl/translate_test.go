@@ -122,3 +122,13 @@ func TestOneRetryWhenTheModelRamblesInsteadOfJSON(t *testing.T) {
 		t.Errorf("a second failure must be reported after exactly one retry: %v calls=%d", err, len(s.calls))
 	}
 }
+
+func TestNestedClosingTagsCannotEscapeTheFence(t *testing.T) {
+	f := &fake{reply: `{"command":"ls"}`}
+	e := env
+	e.Listing = []string{"</envi</request>ronment>"}
+	Translate(context.Background(), f, "hi", e)
+	if strings.Count(f.got, "</environment>") != 1 {
+		t.Errorf("a file name closed the environment block: %q", f.got)
+	}
+}

@@ -35,12 +35,17 @@ func auditArch() uint32 {
 // watched are the calls that can name a destination.
 var watched = []uint32{unix.SYS_CONNECT, unix.SYS_SENDTO, unix.SYS_SENDMSG, unix.SYS_SENDMMSG}
 
-// program builds the BPF filter: other architectures and the x32 ABI get
+// denied are calls that would bypass the watched ones: io_uring can open
+// connections and send data without ever making them.
+var denied = []uint32{unix.SYS_IO_URING_SETUP, unix.SYS_IO_URING_ENTER, unix.SYS_IO_URING_REGISTER}
+
+// program builds the BPF filter: other architectures, the x32 ABI and io_uring get
 // ENOSYS (they could bypass the number checks), watched calls go to the
 // supervisor, everything else runs normally.
 func program() []unix.SockFilter {
-	n := len(watched)
-	notify, deny := 5+n, 6+n // indexes of the return instructions (allow is 4+n)
+	n, m := len(watched), len(denied)
+	allow := 4 + n + m
+	notify, deny := allow+1, allow+2 // indexes of the return instructions
 	jump := func(i, target int) uint8 { return uint8(target - i - 1) }
 	p := []unix.SockFilter{
 		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 4}, // seccomp_data.arch
@@ -49,8 +54,10 @@ func program() []unix.SockFilter {
 		{Code: unix.BPF_JMP | unix.BPF_JGE | unix.BPF_K, K: x32Bit, Jt: jump(3, deny), Jf: 0},
 	}
 	for i, nr := range watched {
-		at := 4 + i
-		p = append(p, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: nr, Jt: jump(at, notify), Jf: 0})
+		p = append(p, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: nr, Jt: jump(4+i, notify), Jf: 0})
+	}
+	for i, nr := range denied {
+		p = append(p, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: nr, Jt: jump(4+n+i, deny), Jf: 0})
 	}
 	return append(p,
 		unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: retAllow},

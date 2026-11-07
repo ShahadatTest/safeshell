@@ -53,9 +53,14 @@ func Restore(store, id string) (Report, error) {
 			r.Restored++
 		}
 	}
-	// Directory mtimes change when children are written, so set them last.
+	// Directory modes and times are set last, deepest first: a read-only folder
+	// must stay writable until its contents are back, and writing children
+	// changes its mtime.
 	for i := len(m.Entries) - 1; i >= 0; i-- {
 		if e := m.Entries[i]; e.Kind == Dir {
+			if err := os.Chmod(e.Path, os.FileMode(e.Mode)); err != nil {
+				r.Problems = append(r.Problems, fmt.Sprintf("could not set permissions on %s: %v", e.Path, err))
+			}
 			_ = os.Chtimes(e.Path, time.Time{}, time.Unix(0, e.MTime))
 		}
 	}
@@ -68,7 +73,7 @@ func restoreEntry(store, id string, e Entry) (changed bool, err error) {
 	switch e.Kind {
 	case Dir:
 		if statErr == nil && cur.IsDir() {
-			return false, os.Chmod(e.Path, os.FileMode(e.Mode))
+			return false, os.Chmod(e.Path, 0o700) // writable while its contents are put back; the real mode is set at the end
 		}
 		if statErr == nil {
 			if err := os.RemoveAll(e.Path); err != nil {
@@ -79,7 +84,7 @@ func restoreEntry(store, id string, e Entry) (changed bool, err error) {
 			return false, err
 		}
 		_ = os.Lchown(e.Path, e.UID, e.GID)
-		return true, os.Chmod(e.Path, os.FileMode(e.Mode))
+		return true, nil
 	case Symlink:
 		if statErr == nil {
 			if t, err := os.Readlink(e.Path); err == nil && t == e.Link {

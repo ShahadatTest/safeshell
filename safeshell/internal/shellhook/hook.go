@@ -16,12 +16,20 @@ __ss_guard() {
   out=$(command ss guard --cwd "$PWD" "${unknown[@]}" -- "$READLINE_LINE" </dev/tty 2>/dev/tty)
   rc=$?
   [[ -n $tty ]] && stty "$tty" </dev/tty
-  if (( rc == 0 )); then READLINE_LINE=$out; else READLINE_LINE=; fi
+  case $rc in
+    0) READLINE_LINE=$out ;;
+    1) READLINE_LINE= ;;   # cancelled
+    *) # SafeShell itself failed (missing, crashed): say so and let the line through rather than lock the user out
+       printf '\nSafeShell failed (exit %s), so this line was NOT checked. Set SAFESHELL_OFF=1 to silence this.\n' "$rc" >/dev/tty ;;
+  esac
   READLINE_POINT=${#READLINE_LINE}
 }
 if [[ $- == *i* ]]; then
+  shopt -s histverify   # !! and !$ are expanded into the line first, so the guard sees what would really run
   bind -x '"\C-x\C-s": __ss_guard'
-  bind '"\C-m": "\C-x\C-s\C-j"'
+  bind '"\C-x\C-a": accept-line'
+  bind '"\C-m": "\C-x\C-s\C-x\C-a"'
+  bind '"\C-j": "\C-x\C-s\C-x\C-a"'   # Ctrl-J also accepts a line, and a pasted newline is one
 fi
 `
 
@@ -35,10 +43,15 @@ __ss_accept_line() {
     out=$(command ss guard --cwd "$PWD" "${unknown[@]}" -- "$BUFFER" </dev/tty 2>/dev/tty)
     rc=$?
     [[ -n $tty ]] && stty "$tty" </dev/tty
-    if (( rc == 0 )); then BUFFER=$out; else BUFFER=; fi
+    case $rc in
+      0) BUFFER=$out ;;
+      1) BUFFER= ;;
+      *) print -u2 "\nSafeShell failed (exit $rc), so this line was NOT checked. Set SAFESHELL_OFF=1 to silence this." ;;
+    esac
   fi
   zle .accept-line
 }
+setopt hist_verify   # expand !! into the line first so the guard sees what would really run
 zle -N accept-line __ss_accept_line
 `
 

@@ -44,6 +44,9 @@ answered and nothing runs. Needs an AI model: see  ss help models.`},
      ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY. Only the command text is sent, with your
      home folder name hidden, and never file contents.
    Modes: auto (local if downloaded), local, cloud, hybrid (local first, cloud as backup), off.
+Graphics: the engine uses CUDA on a recent NVIDIA driver, otherwise Vulkan, otherwise the CPU, and
+   falls back automatically if the graphics card fails. See what is used with  ss doctor.
+   Force one with "gpu": "cuda" | "vulkan" | "cpu" under ai.local in ~/.config/safeshell/config.json.
 The AI can only make SafeShell MORE careful. It can never let a blocked command through.
 Commands:  ss ai setup | ss ai status | ss ai stop`},
 	{"undo", "Undo and snapshots", `When you approve a risky command, SafeShell first saves the files it will change.
