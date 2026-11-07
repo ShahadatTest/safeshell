@@ -1,0 +1,5 @@
+bin/
+/ss
+*.test
+*.out
+coverage.*
