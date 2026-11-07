@@ -22,6 +22,7 @@ const (
 	EffectProcess EffectKind = "processes"
 	EffectDisk    EffectKind = "disk"
 	EffectNetwork EffectKind = "network"
+	EffectReview  EffectKind = "review"
 )
 
 // Effect is one thing a command would do, with how sure we are.

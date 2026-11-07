@@ -104,3 +104,11 @@ func (a *Analysis) simulate(ctx context.Context, sim Simulator, cwd string) {
 func (a *Analysis) estimated(why string) domain.Effect {
 	return domain.Effect{Kind: domain.EffectFS, Evidence: domain.Estimated, Summary: why, MinLevel: a.Verdict.Level}
 }
+
+// AddEffect records a further finding (such as an AI review) and decides again.
+// Effects can only raise the level, never lower it.
+func (a *Analysis) AddEffect(e domain.Effect) {
+	a.Effects = append(a.Effects, e)
+	a.Level = policy.FinalLevel(a.Verdict.Level, a.Effects)
+	a.Decision = policy.Decide(a.Level, a.Effects)
+}
