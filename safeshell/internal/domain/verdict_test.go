@@ -39,3 +39,23 @@ func TestWithAltDoesNotMutateOriginal(t *testing.T) {
 		t.Errorf("WithAlt must return a copy: %+v %+v", f, g)
 	}
 }
+
+func TestEvidenceAndDecisionNames(t *testing.T) {
+	if Observed.String() != "OBSERVED" || Estimated.String() != "ESTIMATED" || Inspected.String() != "INSPECTED" || Previewed.String() != "PREVIEWED" {
+		t.Error("evidence names")
+	}
+	if Allow.String() != "allow" || HardBlock.String() != "hard-block" {
+		t.Error("decision names")
+	}
+	b, _ := json.Marshal(Effect{Kind: EffectFS, Evidence: Observed})
+	if string(b) != `{"kind":"files","evidence":"OBSERVED","summary":"","min_level":"R0"}` {
+		t.Errorf("effect JSON = %s", b)
+	}
+	d, _ := json.Marshal(Confirm)
+	if string(d) != `"confirm"` {
+		t.Errorf("decision JSON = %s", d)
+	}
+	if !(Observed > Previewed && Previewed > Inspected && Inspected > Estimated) {
+		t.Error("evidence must be ordered strongest last")
+	}
+}
