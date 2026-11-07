@@ -2,6 +2,7 @@ package rules
 
 import (
 	"os"
+	"path"
 	"strings"
 )
 
@@ -13,16 +14,11 @@ func Norm(p string) string {
 	if strings.HasPrefix(p, "$HOME") {
 		p = "~" + strings.TrimPrefix(p, "$HOME")
 	}
-	for strings.Contains(p, "//") {
-		p = strings.ReplaceAll(p, "//", "/")
+	if p == "" {
+		return p
 	}
-	if len(p) > 1 {
-		p = strings.TrimRight(p, "/")
-		if p == "" {
-			p = "/"
-		}
-	}
-	return p
+	// Clean resolves "." and ".." so `rm -rf /tmp/..` is seen as `rm -rf /`.
+	return path.Clean(p)
 }
 
 // Critical reports whether deleting or rewriting p would damage the whole

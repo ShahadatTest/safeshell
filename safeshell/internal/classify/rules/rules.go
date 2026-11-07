@@ -69,7 +69,11 @@ func init() {
 // Rate applies the rule for c's program. known is false when no rule or list
 // mentions the program; it is then rated R1 and left for the sandbox to examine.
 func Rate(c shellparse.Command) (fs []Finding, known bool) {
-	if r, ok := table[c.Name]; ok {
+	name := c.Name
+	if strings.HasPrefix(name, "mkfs.") { // mkfs.ext4, mkfs.xfs, ...
+		name = "mkfs"
+	}
+	if r, ok := table[name]; ok {
 		return r(c, parseFlags(c.Args)), true
 	}
 	if slices.Contains(readOnly, c.Name) {
