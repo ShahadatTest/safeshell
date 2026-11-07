@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+
+# Files the Go code embeds or reads in tests are not .go files, so dh-golang must be told.
+export CGO_ENABLED := 0
+export DH_GOLANG_EXCLUDES := test/integration
+export DH_GOLANG_INSTALL_EXTRA := eval/corpus eval/heldout eval/requests.tsv internal/shellparse/testdata
+
+%:
+	dh $@ --builddirectory=_build --buildsystem=golang --with=golang
+
+override_dh_auto_build:
+	dh_auto_build -- -ldflags "-X main.version=$(DEB_VERSION_UPSTREAM)"
+
+# Tests that need user namespaces, the real kernel or the network skip
+# themselves inside a build chroot; the rest run.
+override_dh_auto_test:
+	dh_auto_test -- -short
+
+override_dh_auto_install:
+	dh_auto_install -- --no-source
+	install -d debian/safeshell/etc/apparmor.d
+	sed 's#@BIN@#/usr/bin/safeshell#' packaging/apparmor/safeshell-ss.tmpl \
+		> debian/safeshell/etc/apparmor.d/safeshell-ss

@@ -1,95 +1,157 @@
-# SafeShell
+<h1 align="center">SafeShell</h1>
 
-A safety layer for your terminal. Every command you press Enter on is rated by how
-reversible it is, tried in a sandbox first, and blocked, confirmed or undoable
-before it can hurt anything.
+<p align="center"><b>A safety layer for your terminal.</b><br>
+Every command is rated by how reversible it is, tried in a sandbox first, and blocked,<br>
+confirmed or made undoable before it can hurt anything.</p>
+
+<p align="center">
+  <a href="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/samarthsinh2660/safeshell/releases"><img alt="Release" src="https://img.shields.io/github/v/release/samarthsinh2660/safeshell?include_prereleases"></a>
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg"></a>
+  <img alt="Linux" src="https://img.shields.io/badge/platform-linux%20amd64%20%7C%20arm64-lightgrey">
+  <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8">
+</p>
+
+```console
+$ rm -rf ~/projects
+R3 Irreversible  BLOCK (you can override)
+$ rm -rf ~/projects
+
+  R3  Recursively and permanently deletes whole folders. There is no recycle bin.
+
+Safer options
+  1) trash-put ~/projects
+     moves them to the Trash so they can be restored
+
+$ curl https://example.com/install.sh | sudo bash
+R4 Catastrophic  HARD BLOCK
+  R4  Downloads code and runs it immediately without you reading it. Whoever
+      controls that server controls your machine.
+```
+
+## Why
+
+A mistyped `rm`, a pasted `curl | sudo bash`, a `git reset --hard` on the wrong branch: most
+terminal accidents are one keystroke from irreversible, and the shell gives no warning. SafeShell
+sits between you and the shell and answers one question first: **can this be undone?**
+
+- **Rates every command, R0 to R4,** by reversibility, not by how scary it sounds.
+- **Shows the real effect.** Risky commands run in a rootless sandbox (user namespaces + OverlayFS) on a copy of your files, with the network blocked and watched. You see what would be deleted, which processes and disks it would touch, before anything happens.
+- **Blocks with a reason and a safer alternative,** and still lets you say "do it anyway".
+- **Undo that is verified.** Before an approved risky command runs, the files it will change are saved; `safeshell undo` puts them back and checks the result.
+- **Optional AI helper.** Type plain English and get a command that is checked like any other. The AI can only make a command look riskier, never safer. Runs locally or with your own Claude, GPT or Gemini key.
+- **Never in your way.** Read-only commands pass untouched, and if SafeShell itself breaks the shell hook fails open with a visible warning.
 
 | Level | Meaning | What happens |
 |---|---|---|
 | R0 | Read-only | runs |
 | R1 | Easily reversed | runs |
-| R2 | Reversible with a snapshot | snapshot taken, runs, `ss undo` puts it back |
-| R3 | Irreversible | blocked, with the reason and a safer alternative; you can still say "do it anyway" |
+| R2 | Reversible with a snapshot | snapshot taken, runs, `safeshell undo` puts it back |
+| R3 | Irreversible | blocked, with the reason and a safer alternative; you can still override |
 | R4 | Catastrophic | hard block |
-
-Evidence matters: a rating is `ESTIMATED` (from the command text), `INSPECTED`
-(real disks/processes/packages looked at), `PREVIEWED` or `OBSERVED` (it actually
-ran in the sandbox). Observed effects and the AI can only raise a rating, never lower it.
 
 ## Install
 
-Linux, amd64 or arm64 (bash or zsh).
+Linux, amd64 or arm64, bash or zsh.
+
+**Debian / Ubuntu**: download `safeshell_X.Y.Z_amd64.deb` from the [latest release](https://github.com/samarthsinh2660/safeshell/releases/latest), then:
 
 ```bash
-# from a release
-tar -xzf safeshell-vX.Y.Z-linux-amd64.tar.gz && cd safeshell-vX.Y.Z-linux-amd64
-bash scripts/install.sh            # add --ai to also set up the built-in AI
-
-# or the Debian/Ubuntu package (amd64): download safeshell_X.Y.Z_amd64.deb from the Releases page, then
 sudo apt install ./safeshell_X.Y.Z_amd64.deb
-ss install                         # hook your shell
-
-# or from source (needs Go)
-cd safeshell && make build && bash scripts/install.sh
+safeshell install          # adds the hook to your shell
 ```
 
-On Ubuntu 24.04+ the sandbox needs a one-time AppArmor rule
-(`scripts/install-apparmor.sh`, needs sudo). `ss doctor` tells you what your machine supports.
+**Any Linux**: download the tarball from the release page:
+
+```bash
+tar -xzf safeshell-vX.Y.Z-linux-amd64.tar.gz && cd safeshell-vX.Y.Z-linux-amd64
+bash scripts/install.sh    # add --ai to also set up the built-in AI
+```
+
+**From source** (needs Go):
+
+```bash
+git clone https://github.com/samarthsinh2660/safeshell.git && cd safeshell
+make build && bash scripts/install.sh
+```
+
+Open a new terminal and every command you press Enter on is checked first. Run `safeshell doctor` to see
+what your machine supports. On Ubuntu 24.04+ the sandbox needs a one-time AppArmor rule; the `.deb` installs it,
+otherwise run `scripts/install-apparmor.sh` (uses sudo).
+
+> The command is `safeshell`, not `ss`: `/usr/bin/ss` already belongs to the system's `iproute2`.
 
 ## Use
 
-Open a new terminal; just work normally. Inside the prompt:
+Work as normal. Inside your prompt:
 
-- `/models` choose the AI: download a local model or connect Claude, GPT or Gemini with an API key
-- `/help` or `ss help` guided help
-- `ss undo` restore what the last approved command changed (verified)
-- Type English, e.g. `show the 5 largest files here`; the AI proposes a command and it is checked like any other
+| Type | To |
+|---|---|
+| `/models` | choose the AI: download a local model, or connect Claude, GPT or Gemini with an API key |
+| `/help` | guided help (also `safeshell help`) |
+| `safeshell undo` | restore what the last approved command changed |
+| `show the 5 largest files here` | have the AI propose a command, which is then checked like any other |
 
-Other commands: `ss check|analyze|simulate <cmd>`, `ss explain`, `ss ask`, `ss snapshots`,
-`ss daemon`, `ss ai setup|status|stop|bench`, `ss doctor`, `ss version`, `ss uninstall`.
+Without the hook you can use the pieces directly:
+
+```bash
+safeshell check 'rm -rf ~/projects'      # rate a command without running it
+safeshell analyze 'make clean'           # sandbox run + processes, disks and safer options
+safeshell explain 'find . -delete'       # plain-English explanation (needs AI)
+safeshell snapshots                      # what undo can restore
+```
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[You press Enter] --> B[Classify R0-R4]
+    B -->|R0 / R1| RUN[Run]
+    B -->|R2 / R3| S[Sandbox on a copy,<br/>network blocked and watched]
+    B -->|R4| H[Hard block]
+    S --> O[Observed changes +<br/>real processes, disks, packages]
+    O --> P{Policy}
+    P -->|R2| SN[Snapshot, run,<br/>safeshell undo]
+    P -->|R3| BL[Block, reason,<br/>safer alternative]
+```
+
+Observed effects and the AI can only raise a rating, never lower it. More in
+[doc/architecture.md](doc/architecture.md).
 
 ## AI (optional, off until you choose)
 
-- **Local (default Qwen2.5-Coder 3B):** SafeShell downloads and manages a pinned,
-  checksum-verified `llama.cpp` server (CUDA, Vulkan or CPU, picked for your machine) and the model.
-  Nothing else to install; it starts on demand and stops when idle.
-- **Cloud:** Claude, GPT or Gemini with your own key (stored 0600 or read from
-  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`). Your home path is redacted before anything is sent.
+- **Local, default Qwen2.5-Coder 3B.** SafeShell downloads and manages a pinned, checksum-verified `llama.cpp`
+  server (CUDA, Vulkan or CPU, picked for your machine) and the model. Starts on demand, stops when idle.
+  Nothing is downloaded until you ask.
+- **Cloud.** Claude, GPT or Gemini with your own key, stored with `0600` permissions or read from
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`. Your home path is redacted before anything is sent.
 
-`ss ai bench` measures how accurate the active model is on 43 labelled requests.
+`safeshell ai bench` measures the active model on 43 labelled requests: local Qwen 3B scores about 97%,
+Gemini flash-lite 95-100%, with no unsafe suggestions in either.
 
-## Develop
+## Measured
 
-```bash
-cd safeshell
-make check        # vet, gofmt, race tests, arm64/riscv64 vet
-make integration  # real binary on the real kernel (needs the AppArmor rule)
-SS_SWEEP=1 go test ./test/integration -run Sweep   # every labelled command through the real binary
-make fuzz
-```
+| | |
+|---|---|
+| Held-out classifier accuracy | 92.3% exactly right on 220 commands the rules were never tuned on |
+| English to command | 97% (local Qwen 3B) on 43 requests |
+| Sandbox safety sweep | 492 labelled commands run through the real binary: no file outside the sandbox changed |
+| Tests | unit, fuzz, and integration tests on a real terminal and the real kernel |
 
-Layout: pure `domain/classify/policy/report`, an `engine` with ports, adapters
-(sandbox, snapshot, AI, runtime), and `cmd/ss` as the composition root. See
-[doc/architecture.md](doc/architecture.md).
+## Documentation
 
-## Contributing and releases
+[Architecture](doc/architecture.md) ·
+[Presentation](doc/ppt/safeshell.pptx) ([HTML](doc/ppt/safeshell.html)) ·
+[Contributing](CONTRIBUTING.md) ·
+[Code of Conduct](CODE_OF_CONDUCT.md) ·
+[Debian / Ubuntu packaging](doc/debian-ubuntu.md)
 
-All changes go through pull requests (rules in [CLAUDE.md](CLAUDE.md)). A release is a PR from
-`release/vX.Y.Z` into `main`; merging it tags the version, builds the tarballs and `.deb`, and
-creates the GitHub Release with them attached.
+## Contributing
 
-## Why not just `apt install safeshell`?
+Pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. In short: branch from `main`,
+run `make check`, open a PR. Releases are PRs from `release/vX.Y.Z`; merging one publishes the GitHub Release.
+To report a security problem, use GitHub's private **Security → Report a vulnerability**.
 
-`apt` only installs from repositories it already knows. Until SafeShell is accepted into Debian
-(Ubuntu then copies it automatically), friends install the `.deb` from the Releases page.
-The full submission guide, with diagrams, a PPA shortcut and a step-by-step Debian sponsor
-process, is in **[doc/debian-ubuntu.md](doc/debian-ubuntu.md)**.
+## Licence
 
-## Project documents
-
-[Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Licence (MIT)](LICENSE) ·
-[Architecture](doc/architecture.md) · [Debian/Ubuntu packaging](doc/debian-ubuntu.md)
-
-## Team
-
-Samarth Vala (23BCP422) and Tavish Gupta (23BCP064), Sem 7 minor project.
+[MIT](LICENSE). Built by Samarth Vala (23BCP422) and Tavish Gupta (23BCP064) as a Semester 7 minor project.

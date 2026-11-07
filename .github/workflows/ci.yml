@@ -6,14 +6,11 @@ on:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: safeshell
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: safeshell/go.mod
+          go-version-file: go.mod
       - name: Vet, format, race-detector tests, cross-architecture vet
         run: make check
       - name: Short fuzz runs

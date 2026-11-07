@@ -33,16 +33,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version-file: safeshell/go.mod
+          go-version-file: go.mod
       - name: Build everything
-        working-directory: safeshell
         run: |
           make check
           make dist VERSION=${{ steps.v.outputs.version }}
           make deb VERSION=${{ steps.v.outputs.version }}
           cd dist && sha256sum *.tar.gz *.deb > SHA256SUMS
       - name: GitHub Release
-        working-directory: safeshell
         run: |
           gh release create "${{ steps.v.outputs.version }}" dist/*.tar.gz dist/*.deb dist/SHA256SUMS \
             --target "$MERGE_SHA" --title "SafeShell ${{ steps.v.outputs.version }}" --generate-notes
