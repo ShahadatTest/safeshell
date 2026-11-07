@@ -11,10 +11,10 @@ Contents: [Ways to help](#ways-to-help) · [Set up](#set-up-your-machine) · [Ho
 
 | You want to... | Do this |
 |---|---|
-| Report a bug | Open an issue: what you typed, what you expected, what happened, and the output of `ss doctor` and `ss version` |
+| Report a bug | Open an issue: what you typed, what you expected, what happened, and the output of `safeshell doctor` and `safeshell version` |
 | Say a command is rated wrongly | Open an issue with the command and the level you think it deserves (see below, this is the most useful report there is) |
-| Add or fix a classifier rule | Edit `safeshell/internal/classify/rules/`, add the command to `safeshell/eval/corpus`, open a PR |
-| Improve the AI prompts | Change `safeshell/internal/nl/translate.go`, run `ss ai bench`, put the before/after numbers in the PR |
+| Add or fix a classifier rule | Edit `internal/classify/rules/`, add the command to `eval/corpus`, open a PR |
+| Improve the AI prompts | Change `internal/nl/translate.go`, run `safeshell ai bench`, put the before/after numbers in the PR |
 | Improve docs | Edit any `.md` file and open a PR; no tests needed |
 
 Small fixes can go straight to a PR. For anything bigger (a new adapter, a new shell, a
@@ -22,24 +22,24 @@ change to the safety model), open an issue first so we agree on the approach bef
 
 ## Set up your machine
 
-Needs Linux (amd64 or arm64), Go (the version in `safeshell/go.mod`), `make`, and git.
+Needs Linux (amd64 or arm64), Go (the version in `go.mod`), `make`, and git.
 
 ```bash
 git clone https://github.com/samarthsinh2660/safeshell.git
-cd safeshell/safeshell        # the Go module is in the inner folder
-make build                    # produces bin/ss
+cd safeshell
+make build                    # produces bin/safeshell
 make check                    # vet + gofmt + race tests + arm64/riscv64 vet; must pass
 ```
 
 The sandbox tests need user namespaces. On Ubuntu 24.04+ run the one-time rule first
-(`scripts/install-apparmor.sh bin/ss`, uses sudo), then:
+(`scripts/install-apparmor.sh bin/safeshell`, uses sudo), then:
 
 ```bash
 make integration                                    # real binary, real kernel
 SS_SWEEP=1 go test ./test/integration -run Sweep    # every labelled command through the real binary
 ```
 
-`ss doctor` shows what your machine supports. Tests that need a missing feature skip themselves.
+`safeshell doctor` shows what your machine supports. Tests that need a missing feature skip themselves.
 
 ## How the code is organised
 
@@ -48,7 +48,7 @@ Dependencies point inward only.
 
 ```mermaid
 flowchart LR
-    subgraph Edge["cmd/ss (composition root)"]
+    subgraph Edge["cmd/safeshell (composition root)"]
         CLI[CLI, shell hook, daemon]
     end
     subgraph Core["Pure core: no files, no network, no env"]
@@ -81,7 +81,7 @@ The rules this picture enforces:
 - `domain`, `classify`, `policy`, `report` never touch files, processes, the network or the environment.
 - `engine` depends only on small interfaces it defines itself ("ports"). Adapters implement them
   and never import `engine`.
-- `cmd/ss` is the only place that wires adapters to the engine. It holds no business logic.
+- `cmd/safeshell` is the only place that wires adapters to the engine. It holds no business logic.
 - A new shell, snapshot backend, AI provider or inspector is a new adapter or file, not edits scattered through the engine.
 
 More detail in [doc/architecture.md](doc/architecture.md).
@@ -103,7 +103,7 @@ flowchart TD
     AIR -->|yes| AIX[AI may raise the level, never lower it]
     AIR -->|no| POL
     AIX --> POL[Policy decides again]
-    POL -->|R2| SNAP[Snapshot, run, ss undo available]
+    POL -->|R2| SNAP[Snapshot, run, safeshell undo available]
     POL -->|R3| BLK[Block with reason + safer alternative<br/>user can still choose to do it anyway]
     POL -->|R0 / R1| RUN
 ```
@@ -166,7 +166,7 @@ Keep one concern per PR. If `main` moved while you worked, `git rebase origin/ma
 - Classifier rules use table tests. `eval/corpus` is the development set; `eval/heldout` is an
   independent set that only grows with new, unseen commands. `TestHeldoutReport` enforces
   accuracy floors: fix the rule, never lower a floor.
-- AI code is unit-tested with fake backends, never the network. `ss ai bench` measures real
+- AI code is unit-tested with fake backends, never the network. `safeshell ai bench` measures real
   accuracy on 43 fixed requests (local Qwen 3B about 97%, Gemini flash-lite about 95-100%).
 - Live tests against a provider are opt-in and take keys from environment variables only.
 

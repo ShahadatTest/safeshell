@@ -1,5 +1,5 @@
 bin/
-/ss
+/safeshell
 *.test
 *.out
 coverage.*
@@ -7,5 +7,5 @@ coverage.*
 *.tar.gz
 *.gguf
 *.part
-safeshell/dist/
+/dist/
 node_modules/

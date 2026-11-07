@@ -1,0 +1,32 @@
+Source: safeshell
+Section: utils
+Priority: optional
+Maintainer: samarthsinh2660 <rajuvala80@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-golang,
+               golang-any (>= 2:1.26~),
+               golang-golang-x-sys-dev (>= 0.47.0),
+               golang-golang-x-term-dev (>= 0.45.0),
+               golang-mvdan-sh-dev (>= 3.14.1)
+Standards-Version: 4.7.2
+Homepage: https://github.com/samarthsinh2660/safeshell
+Vcs-Browser: https://github.com/samarthsinh2660/safeshell
+Vcs-Git: https://github.com/samarthsinh2660/safeshell.git
+Rules-Requires-Root: no
+XS-Go-Import-Path: github.com/samarthsinh2660/safeshell
+
+Package: safeshell
+Architecture: any
+Built-Using: ${misc:Built-Using}
+Depends: ${misc:Depends}
+Recommends: apparmor
+Description: safety layer for your terminal
+ SafeShell rates every command you run by how reversible it is, tries it in
+ a rootless sandbox first to show what it would really change, blocks the
+ dangerous ones with a reason and a safer alternative, and keeps a snapshot
+ so the last approved command can be undone and verified.
+ .
+ It hooks into bash and zsh. An optional assistant turns plain English into
+ commands, using a local model that SafeShell downloads only when asked, or
+ your own Claude, GPT or Gemini API key. The assistant can only make a
+ command look riskier, never safer.

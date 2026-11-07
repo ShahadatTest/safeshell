@@ -1,0 +1,86 @@
+.TH SAFESHELL 1 "November 2026" "safeshell 1.0" "User Commands"
+.SH NAME
+safeshell \- a safety layer for your terminal
+.SH SYNOPSIS
+.B safeshell
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B safeshell
+rates every shell command by how reversible it is (R0 read-only to R4
+catastrophic), can run it in a rootless sandbox first to show what it would
+change, blocks the dangerous ones with a reason and a safer alternative, and
+keeps a snapshot so the last approved command can be undone.
+.PP
+Run
+.B safeshell install
+once to add the hook to your shell startup file. After that every command you
+press Enter on in bash or zsh is checked first.
+.SH COMMANDS
+.TP
+.BI "check [--json] " command
+Rate a command without running it. Exit status 0 means R0 to R2, 3 means R3, 4 means R4.
+.TP
+.BI "analyze [--json] [--cwd " DIR "] " command
+Rate a command, run it in the sandbox, and report the real files, processes and disks it would touch.
+.TP
+.BI "simulate [--json] [--cwd " DIR "] [--timeout " DURATION "] " command
+Run a command in the sandbox and show what it changed. Real files are never touched.
+.TP
+.BI explain " command"
+Analysis plus a plain-English explanation. Needs an AI model.
+.TP
+.BI ask " request"
+Turn a request written in English into a command, which is then checked like any other.
+.TP
+.B ai setup|status|stop|bench
+Manage the optional built-in AI. Nothing is downloaded until you run
+.BR "ai setup" .
+.TP
+.RB "undo [" ID ]
+Put back what the last approved command changed, and verify it.
+.TP
+.B snapshots
+List saved snapshots.
+.TP
+.B daemon [stop]
+Keep SafeShell warm in the background for faster checks.
+.TP
+.B install [--ai], uninstall
+Add or remove the shell hook.
+.TP
+.B hook bash|zsh
+Print the shell hook.
+.TP
+.B doctor
+Show what the machine supports: sandbox, snapshots, AI.
+.TP
+.B version
+Print the version.
+.SH FILES
+.TP
+.I ~/.config/safeshell/config.json
+Settings.
+.TP
+.I ~/.config/safeshell/keys.json
+API keys for cloud models, readable only by you.
+.TP
+.I ~/.local/state/safeshell/audit.jsonl
+Log of decisions.
+.SH ENVIRONMENT
+.TP
+.B SAFESHELL_AI
+Override the AI mode: auto, off, local, cloud or hybrid.
+.TP
+.BR ANTHROPIC_API_KEY ", " OPENAI_API_KEY ", " GEMINI_API_KEY
+Cloud model keys, used instead of the key file.
+.SH NOTES
+The program is called
+.B safeshell
+and not
+.B ss
+because
+.BR ss (8),
+the socket statistics tool, already uses that name.
+.SH AUTHORS
+Samarth Vala and Tavish Gupta.

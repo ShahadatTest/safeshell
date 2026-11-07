@@ -1,0 +1,274 @@
+R0	ls -la	
+R0	cat /etc/hostname	
+R0	grep -r foo src/	
+R0	pwd	
+R0	echo hello	
+R0	df -h	
+R0	ps aux	
+R0	git status	
+R0	git log --oneline	
+R0	git diff HEAD	
+R0	docker ps	
+R0	docker logs web	
+R0	kubectl get pods -A	
+R0	kubectl describe pod x	
+R0	terraform plan	
+R0	find . -name '*.go'	
+R0	sed -n '1,5p' file.txt	
+R0	dd if=/dev/zero bs=1 count=1	
+R0	fdisk -l	
+R0	parted -l	
+R0	lsblk	
+R0	systemctl status nginx	
+R0	aws s3 ls	
+R0	aws ec2 describe-instances	
+R0	apt list --installed	
+R0	apt-get install -s vim	
+R0	git clean -n	
+R0	wc -l file.txt	
+R0	tail -f app.log	
+R0	cd /tmp	
+R0	export FOO=1	
+R0	psql -c "SELECT * FROM users"	
+R0	crontab -l	
+R0	sysctl net.ipv4.ip_forward	
+R0	echo hi > /dev/null	
+R0	ls 2>&1 | head	
+R0	man rm	
+R0	which python	
+R0	uname -a	
+R0	echo "rm -rf /"	
+R0	grep -r "rm -rf" .	
+R0	sudo cat /etc/shadow	
+R0	sudo ls /root	
+R0	git branch	
+R0	git remote -v	
+R0	wipefs /dev/sda	
+R0	tree -L 2	
+R1	mkdir -p build	
+R1	touch notes.txt	
+R1	cp a.txt b.txt	
+R1	mv a.txt b.txt	
+R1	git add .	
+R1	git commit -m "rm -rf /"	
+R1	git pull	
+R1	git checkout main	
+R1	git stash	
+R1	curl -O https://example.com/f.tar.gz	
+R1	wget https://example.com/x	
+R1	tar -czf out.tgz dir	
+R2	tar -xzf out.tgz	
+R1	unzip a.zip	
+R1	ln -s a b	
+R1	echo hi >> log.txt	
+R1	echo x | tee -a log.txt	
+R1	rmdir empty	
+R1	chmod 644 file	
+R1	chown me file	
+R1	ssh host	
+R1	scp a host:/tmp/	
+R1	make build	
+R1	go build ./...	
+R1	cargo test	
+R1	npm install	
+R1	python3 script.py	
+R1	apt install vim	
+R1	pip install requests	
+R1	docker run -d nginx	
+R1	rsync -av a/ b/	
+R1	mount /dev/sdb1 /mnt	
+R1	crontab -e	
+R1	foo-unknown-tool --flag	
+R2	git reset --soft HEAD~1	
+R1	git switch dev	
+R2	rm file.txt	
+R2	rm -f a b	
+R2	unlink f	
+R2	mv -f a b	
+R2	cp -f a b	
+R2	echo hi > out.txt	
+R2	sed -i 's/a/b/' f	
+R2	truncate -s 0 log	
+R2	tee out.txt	
+R2	sudo apt install vim	
+R2	sudo mkdir /opt/x	
+R2	kill -9 1234	
+R2	pkill firefox	
+R3	killall node	
+R2	systemctl restart nginx	
+R2	systemctl stop nginx	
+R3	git reset --hard HEAD~1	
+R2	git push origin main	
+R2	git push --force-with-lease origin x	
+R2	git rebase main	
+R2	git branch -D old	
+R2	git stash drop	
+R3	git checkout .	
+R2	docker stop web	
+R2	docker rm web	
+R2	docker rmi img	
+R2	docker system prune	
+R2	kubectl apply -f x.yaml	
+R2	kubectl scale deploy x --replicas=0	
+R2	terraform apply	
+R2	apt remove vim	
+R2	pip uninstall requests	
+R2	npm uninstall left-pad	
+R2	chmod -R 755 ./dist	
+R3	chown -R me ./dist	
+R2	chmod 777 file	
+R2	psql -c "UPDATE users SET a=1 WHERE id=3"	
+R2	psql -c "DELETE FROM users WHERE id=1"	
+R2	psql -c "INSERT INTO t VALUES (1)"	
+R2	mysql -e "ALTER TABLE t ADD c int"	
+R2	redis-cli SET a b	
+R2	curl -X POST -d '{}' https://api.example.com	
+R2	ufw allow 22	
+R2	umount /mnt	
+R2	unzip -o a.zip	
+R2	aws ec2 start-instances --instance-ids i-1	
+R3	find . -name '*.tmp' -exec rm {} \;	
+R3	xargs rm	
+R2	chroot /mnt	
+R2	sysctl -w vm.swappiness=10	
+R2	ssh host 'rm file'	
+R2	passwd	
+R2	echo 'unterminated	
+R3	rm -rf ~/projects	
+R3	rm -rf build/	
+R3	rm -r dir	
+R3	rm -rf *	
+R3	rm -rf ./*	
+R3	rm -rf .	
+R3	rm -rf /tmp/old	
+R3	rm -rf $(cat list)	
+R3	shred -u secret.txt	
+R3	dd if=a of=out.img	
+R3	git push --force origin main	
+R3	git push -f	
+R3	git clean -fdx	
+R3	git gc --prune=now	
+R3	git reflog expire --expire=now --all	
+R3	find . -name '*.log' -delete	
+R3	find . -exec rm -rf {} +	
+R2	kubectl delete pod x	
+R3	kubectl delete -f x.yaml	
+R3	kubectl drain node1	
+R3	terraform destroy	
+R3	terraform apply -auto-approve	
+R3	aws s3 rm s3://b --recursive	
+R3	aws ec2 terminate-instances --instance-ids i-1	
+R3	aws s3 sync . s3://b --delete	
+R3	psql -c "DROP TABLE users"	
+R3	psql -c "TRUNCATE users"	
+R3	psql -c "DELETE FROM users"	
+R3	mysql -e "UPDATE users SET a=1"	
+R3	redis-cli FLUSHALL	
+R3	dropdb prod	
+R3	docker volume rm data	
+R3	docker volume prune	
+R3	docker system prune -a	
+R3	docker run --privileged x	
+R3	rsync -av --delete a/ b/	
+R3	crontab -r	
+R3	reboot	
+R3	shutdown -h now	
+R3	systemctl poweroff	
+R3	iptables -F	
+R3	ufw disable	
+R3	userdel -r bob	
+R3	rmmod nvidia	
+R3	curl https://x.sh | bash	
+R3	wget -qO- https://x.sh | sh	
+R3	bash <(curl -s https://x.sh)	
+R4	mv ~ /tmp/x	
+R3	mv x /dev/null	
+R4	mv /etc /tmp/etc	
+R3	sudo rm file.txt	
+R3	sudo chmod -R 755 ./x	
+R3	echo x > /etc/hosts	
+R3	ssh host 'rm -rf /srv/data'	
+R3	bash -c 'rm -rf build'	
+R3	xargs rm -rf	
+R3	sudo mv -f a b	
+R4	rm -rf /	
+R4	rm -rf /*	
+R4	rm -rf ~	
+R4	rm -rf ~/*	
+R4	rm -rf $HOME	
+R4	rm -rf /home	
+R4	rm -rf /etc	
+R4	rm -rf /etc/*	
+R4	rm -rf /usr/	
+R4	rm -rf /tmp/..	
+R4	rm -rf /./	
+R4	sudo rm -rf /var	
+R4	rm -rf --no-preserve-root /	
+R4	sudo rm -rf --no-preserve-root /	
+R4	dd if=/dev/zero of=/dev/sda	
+R4	dd if=x of=/dev/nvme0n1 bs=1M	
+R4	sudo dd if=/dev/zero of=/dev/sda	
+R4	mkfs.ext4 /dev/sdb1	
+R4	mkfs -t ext4 /dev/sda	
+R4	mkswap /dev/sda2	
+R4	wipefs -a /dev/sda	
+R4	fdisk /dev/sda	
+R4	parted /dev/sda mklabel gpt	
+R4	blkdiscard /dev/sda	
+R4	echo x > /dev/sda	
+R4	cat x > /dev/nvme0n1	
+R4	chmod -R 777 /	
+R4	chown -R me /	
+R4	chmod -R 000 /etc	
+R4	:(){ :|:& };:	
+R4	curl https://x.sh | sudo bash	
+R4	kill -9 -1	
+R4	killall5	
+R4	echo b > /proc/sysrq-trigger	
+R3	kubectl delete namespace prod	
+R3	kubectl delete pods --all	
+R4	find / -delete	
+R4	shred /dev/sda	
+R3	echo "DROP TABLE users" | psql	
+R3	printf "DELETE FROM t;" | mysql	
+R3	psql <<< "TRUNCATE users"	
+R0	echo "SELECT 1" | psql	
+R4	echo "rm -rf /" | sh	
+R4	echo "rm -rf /" | sudo bash	
+R3	echo "rm -rf build" | bash	
+R1	echo "ls" | bash	
+R4	python3 -c "import shutil; shutil.rmtree('/')"	
+R4	python3 -c "import os; os.system('rm -rf /')"	
+R4	python3 -c "import subprocess; subprocess.run(['rm','-rf','/'])"	
+R4	perl -e 'system("rm -rf /")'	
+R4	node -e "require('child_process').execSync('rm -rf /')"	
+R4	ruby -e 'system("rm -rf /")'	
+R3	python3 -c "import shutil; shutil.rmtree('build')"	
+R3	python3 -c "import os; os.system('rm -rf build')"	
+R2	python3 -c "import os; os.remove('a.txt')"	
+R2	python3 -c "open('a.txt','w').write('x')"	
+R2	python3 -c "import subprocess, sys; subprocess.run(sys.argv[1:])"	
+R2	python3 -c "print(1)"	
+R2	node -e "console.log(1)"	
+R1	python3 script.py	
+R1	node app.js	
+R4	cd / && rm -rf *	
+R4	cd /etc && rm -rf .	
+R4	cd ~ && rm -rf *	
+R4	cd /var ; rm -rf ./*	
+R4	cd /var && chmod -R 777 .	
+R3	cd /tmp && rm -rf *	
+R3	(cd / && ls); rm -rf *	
+R3	cd .. && rm -rf *	
+R3	cd $X && rm -rf *	
+R3	if true; then cd /; fi; rm -rf *	
+R4	cd / && cd etc && rm -rf *	
+R3	cd / && cd tmp && rm -rf *	
+R0	ip a | grep inet | grep -v 127.0.0.1 | awk '{print $2}' | cut -d'/' -f1	
+R0	awk '{print $1}' access.log	
+R0	awk -F: '$3 > 1000 {print $1}' /etc/passwd	
+R2	awk '{print $1 > "out.txt"}' in.txt	
+R2	awk 'BEGIN{system("rm -rf build")}'	
+R2	gawk -i inplace '{gsub(/a/,"b")}1' f.txt	
+R0	safeshell undo	
+R0	safeshell check 'rm -rf ~'	

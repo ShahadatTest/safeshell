@@ -1,0 +1,25 @@
+safeshell for Debian
+--------------------
+
+After installing, each user runs once:
+
+    safeshell install
+
+which adds a small hook to ~/.bashrc or ~/.zshrc. Open a new terminal and every
+command you press Enter on is checked first. Remove it with `safeshell uninstall`.
+
+The command is called `safeshell` (not `ss`) because /usr/bin/ss belongs to iproute2.
+
+Sandbox on Ubuntu 24.04 and later
+  The kernel setting that restricts unprivileged user namespaces stops the
+  sandbox from working for unconfined programs. This package ships an AppArmor
+  profile for /usr/bin/safeshell that allows exactly this one program to use
+  them. `safeshell doctor` shows what your machine supports.
+
+Optional AI
+  Nothing is downloaded when the package is installed. `safeshell ai setup`
+  (or /models inside the terminal) downloads a pinned, checksum-verified
+  llama.cpp engine and a model into your own home directory, only after you
+  ask. Cloud models (Claude, GPT, Gemini) use your own API key.
+
+ -- samarthsinh2660 <rajuvala80@gmail.com>  Sat, 07 Nov 2026 12:00:00 +0530
