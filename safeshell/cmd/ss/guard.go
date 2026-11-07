@@ -58,6 +58,11 @@ opts:
 	}
 	cmd, ok := ui.Choose(bufio.NewReader(guardInput()), stderr, line, a.Decision, a.Verdict.Alternatives)
 	record(a, cmd, ok)
+	if ok && cmd == line { // a replacement command has different effects, so the saved files do not apply
+		if note := protect(a); note != "" {
+			fmt.Fprintln(stderr, note)
+		}
+	}
 	if !ok {
 		fmt.Fprintln(stderr, "Cancelled. Nothing was run.")
 		return 1

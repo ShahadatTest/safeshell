@@ -34,7 +34,7 @@ func startBash(t *testing.T) *term {
 		t.Skip("no pty:", err)
 	}
 	c := exec.Command("bash", "--norc", "--noprofile", "-i")
-	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
+	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	if err := c.Start(); err != nil {
@@ -112,8 +112,17 @@ func TestShellHookStopsADangerousCommandAndLetsSafeOnesRun(t *testing.T) {
 	sh.send("yes\r")
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		if _, err := os.Stat(victim); err != nil {
-			return
+			break
 		}
 	}
-	t.Error("do-it-anyway did not run the command")
+	if _, err := os.Stat(victim); err == nil {
+		t.Fatal("do-it-anyway did not run the command")
+	}
+
+	// ...and undo brings it back, verified.
+	sh.send("ss undo\r")
+	sh.waitFor(t, "Verified")
+	if b, err := os.ReadFile(filepath.Join(victim, "a.txt")); err != nil || string(b) != "x" {
+		t.Errorf("undo did not restore the file: %v %q", err, b)
+	}
 }
