@@ -36,6 +36,9 @@ Usage:
   ss simulate [--json] [--cwd DIR] [--timeout 30s] <command...>
                                    run a command in a sandbox and show what it changed;
                                    the real files are never touched
+  ss guard [--cwd DIR] -- <command...>
+                                   what the shell hook runs: analyse, ask, print the command to run
+  ss hook bash|zsh                 print the shell hook; add  eval "$(ss hook bash)"  to your rc file
   ss doctor                        show what this machine allows (sandbox, snapshots, AI)
 
 Quote the command so your shell passes it through untouched:
@@ -65,6 +68,10 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 		return runAnalyze(args[1:], stdout, stderr, color)
 	case "simulate":
 		return runSimulate(args[1:], stdout, stderr)
+	case "guard":
+		return runGuard(args[1:], stdout, stderr, color)
+	case "hook":
+		return runHook(args[1:], stdout, stderr)
 	case "doctor":
 		return doctor(stdout, probe())
 	default:
