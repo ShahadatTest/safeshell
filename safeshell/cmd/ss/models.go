@@ -285,15 +285,27 @@ func runAI(args []string, stdout, stderr io.Writer) int {
 // runBench measures how well the active model (or --model ID) turns English
 // into safe, correct commands, using the labelled set in eval/requests.tsv.
 func runBench(c config.Config, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 2 && args[0] == "--model" {
-		if _, ok := models.Find(args[1]); !ok {
-			fmt.Fprintln(stderr, "ss ai bench: unknown model", args[1])
+	var pace time.Duration
+	for len(args) > 0 {
+		switch {
+		case len(args) >= 2 && args[0] == "--model":
+			if _, ok := models.Find(args[1]); !ok {
+				fmt.Fprintln(stderr, "ss ai bench: unknown model", args[1])
+				return 2
+			}
+			c.AI.Mode, c.AI.Local.Model = ai.Local, args[1]
+		case len(args) >= 2 && args[0] == "--pace": // a pause between requests, for cloud services with rate limits
+			d, err := time.ParseDuration(args[1])
+			if err != nil || d < 0 {
+				fmt.Fprintln(stderr, "ss ai bench: --pace needs a duration such as 3s")
+				return 2
+			}
+			pace = d
+		default:
+			fmt.Fprint(stderr, usage)
 			return 2
 		}
-		c.AI.Mode, c.AI.Local.Model = ai.Local, args[1]
-	} else if len(args) != 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+		args = args[2:]
 	}
 	b, err := buildBackend(c, runtime.DefaultDirs())
 	if err != nil || b == nil {
@@ -305,11 +317,13 @@ func runBench(c config.Config, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "ss ai bench:", err)
 		return 1
 	}
-	cwd, _ := os.Getwd()
 	fmt.Fprintf(stdout, "Testing %s on %d requests...\n", b.Name(), len(reqs))
-	res := eval.RunBench(context.Background(), b, gatherEnv(cwd), reqs, func(o eval.Outcome) {
+	res := eval.RunBench(context.Background(), b, eval.BenchEnv(), reqs, pace, func(o eval.Outcome) {
 		mark := "ok  "
-		if !o.Pass {
+		switch {
+		case o.Skipped:
+			mark = "SKIP"
+		case !o.Pass:
 			mark = "FAIL"
 		}
 		got := o.Command
@@ -326,8 +340,13 @@ func runBench(c config.Config, args []string, stdout, stderr io.Writer) int {
 		total += o.Elapsed
 	}
 	n := len(res.Outcomes)
+	asked := res.Asked()
 	fmt.Fprintf(stdout, "\n%s: %d of %d correct (%d%%), %d too dangerous, %.1fs per request on average\n",
-		res.Backend, res.Passed(), n, res.Passed()*100/max(n, 1), res.Unsafe(), total.Seconds()/float64(max(n, 1)))
+		res.Backend, res.Passed(), asked, res.Passed()*100/max(asked, 1), res.Unsafe(), total.Seconds()/float64(max(n, 1)))
+	if asked < n {
+		fmt.Fprintf(stdout, "%d request(s) never reached the model (network, key or rate limit) and are not counted; try --pace 3s.\n", n-asked)
+		return 1
+	}
 	return 0
 }
 

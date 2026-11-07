@@ -165,17 +165,6 @@ func TestGuardLetsEnglishFallThroughWhenAIIsOff(t *testing.T) {
 	}
 }
 
-func TestRunnableRecognisesRealCommandsAndRejectsAdvice(t *testing.T) {
-	for cmd, want := range map[string]bool{
-		"ls -la": true, "cd /tmp": true, "./run.sh": true, "FOO=1 ls": true, "sudo apt install x": true,
-		":q": false, "Press Esc then :q": false, "": false, "definitely-not-a-program --x": false,
-	} {
-		if got := runnable(cmd); got != want {
-			t.Errorf("runnable(%q) = %v, want %v", cmd, got, want)
-		}
-	}
-}
-
 func TestAskTurnsAnUnrunnableProposalIntoAdvice(t *testing.T) {
 	useAI(t, fakeAI{reply: `{"command":":q","note":"quits vim"}`}, nil)
 	code, out, errOut := runSS("ask", "how do i exit vim")

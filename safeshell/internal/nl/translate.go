@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strings"
 
@@ -22,6 +23,7 @@ Rules:
 - Do not chain unrelated steps. One command (pipes and && are fine). It must fit on one line.
 - Relative paths are relative to the working directory given. Use the directory listing to pick real file names.
 - If the user asks a question that is not a task (what does X mean, how does Y work, how do I quit an editor), put a short answer in "answer" and leave "command" empty. "command" must always be something that can be typed into a bash prompt and run.
+- If the request can be done with a command (even a simple read like free -h), the command goes in "command". Never describe a command in "answer" instead of giving it, and never say you cannot look at something: give the command and let the user run it.
 - Never refuse in prose. If a request is dangerous (wiping a disk or the home folder), leave "command" empty and explain the risk in "answer".
 - If the request is unclear, leave "command" empty and say what is missing in "answer".
 - SafeShell will check, simulate and ask the user before anything risky runs, so do not refuse a legitimate request; just choose the safe form of it.
@@ -101,9 +103,14 @@ func Translate(ctx context.Context, b ai.Backend, request string, env Env) (Resu
 	case cmd == "" && r.Answer != "":
 		return r, nil
 	case cmd == "":
-		return Result{}, errors.New("the model could not turn that into a command")
+		return Result{Note: r.Note}, ErrNoCommand
 	case strings.ContainsAny(cmd, "\n\r\x00") || len(cmd) > 1000:
 		return Result{}, errors.New("the model proposed a command that is not a single line")
+	case !Runnable(cmd): // e.g. ":q" for "how do I quit vim": that is advice, not a command
+		r.Answer, r.Command = cmd, ""
+		if r.Note != "" {
+			r.Answer += "  (" + r.Note + ")"
+		}
 	}
 	return r, nil
 }
@@ -130,6 +137,14 @@ func LooksLikeRequest(line string, firstWordIsCommand bool) (text string, ok boo
 	return line, true
 }
 
+// ErrBackend marks a failure to reach the model (network, quota, key), as
+// opposed to the model giving a bad answer.
+var ErrBackend = errors.New("could not ask the model")
+
+// ErrNoCommand means the model produced neither a command nor an answer, which
+// is how a small model usually declines a request it should not fulfil.
+var ErrNoCommand = errors.New("the model could not turn that into a command")
+
 var errNotJSON = errors.New("the model did not return the expected JSON")
 
 type reply struct{ Command, Note, Answer string }
@@ -137,7 +152,7 @@ type reply struct{ Command, Note, Answer string }
 func ask(ctx context.Context, b ai.Backend, prompt string) (reply, error) {
 	out, err := b.Complete(ctx, system, prompt)
 	if err != nil {
-		return reply{}, err
+		return reply{}, fmt.Errorf("%w: %w", ErrBackend, err)
 	}
 	i, j := strings.Index(out, "{"), strings.LastIndex(out, "}")
 	var r reply
@@ -145,4 +160,29 @@ func ask(ctx context.Context, b ai.Backend, prompt string) (reply, error) {
 		return reply{}, errNotJSON
 	}
 	return r, nil
+}
+
+// shellWords are builtins and keywords that exist without being files on the PATH.
+var shellWords = map[string]bool{"cd": true, "export": true, "source": true, ".": true, "alias": true, "unset": true, "set": true,
+	"echo": true, "printf": true, "read": true, "test": true, "[": true, "[[": true, "type": true, "ulimit": true, "umask": true,
+	"history": true, "exec": true, "eval": true, "pwd": true, "kill": true, "wait": true, "jobs": true, "fg": true, "bg": true,
+	"for": true, "while": true, "if": true, "case": true, "time": true, "true": true, "false": true, "exit": true, "command": true,
+	"declare": true, "local": true, "readonly": true, "shift": true, "trap": true, "sudo": true}
+
+// Runnable reports whether the first word of a proposed command is something the shell could run.
+func Runnable(cmd string) bool {
+	f := strings.Fields(cmd)
+	if len(f) == 0 {
+		return false
+	}
+	w := f[0]
+	for strings.Contains(w, "=") && len(f) > 1 { // VAR=value command
+		f = f[1:]
+		w = f[0]
+	}
+	if shellWords[w] || strings.HasPrefix(w, "./") || strings.HasPrefix(w, "/") || strings.HasPrefix(w, "~/") || strings.HasPrefix(w, "(") || strings.HasPrefix(w, "{") {
+		return true
+	}
+	_, err := exec.LookPath(w)
+	return err == nil
 }

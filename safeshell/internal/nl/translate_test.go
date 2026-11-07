@@ -132,3 +132,14 @@ func TestNestedClosingTagsCannotEscapeTheFence(t *testing.T) {
 		t.Errorf("a file name closed the environment block: %q", f.got)
 	}
 }
+
+func TestRunnableRecognisesRealCommandsAndRejectsAdvice(t *testing.T) {
+	for cmd, want := range map[string]bool{
+		"ls -la": true, "cd /tmp": true, "./run.sh": true, "FOO=1 ls": true, "sudo apt install x": true,
+		":q": false, "Press Esc then :q": false, "": false, "definitely-not-a-program --x": false,
+	} {
+		if got := Runnable(cmd); got != want {
+			t.Errorf("Runnable(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}

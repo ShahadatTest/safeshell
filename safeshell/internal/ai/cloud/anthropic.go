@@ -6,11 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"safeshell/internal/ai"
 )
 
 // Anthropic is a hosted model. The caller should wrap it with ai.Redacting.
@@ -39,28 +40,30 @@ func (a Anthropic) Complete(ctx context.Context, system, user string) (string, e
 		base = "https://api.anthropic.com"
 	}
 	body, _ := json.Marshal(map[string]any{
-		"model": a.model(), "max_tokens": 600, "temperature": 0, "system": system,
+		"model": a.model(), "max_tokens": 1500, "temperature": 0, "system": system,
 		"messages": []map[string]string{{"role": "user", "content": user}},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", a.Key)
-	req.Header.Set("anthropic-version", "2023-06-01")
 	c := a.Client
 	if c == nil {
 		c = &http.Client{Timeout: 30 * time.Second}
 	}
-	resp, err := c.Do(req)
+	resp, err := ai.Do(ctx, c, func() (*http.Request, error) {
+		req, err := http.NewRequest(http.MethodPost, base+"/v1/messages", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", a.Key)
+		req.Header.Set("anthropic-version", "2023-06-01")
+		return req, nil
+	})
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the API answered %d", resp.StatusCode) // the body can echo the prompt, so it is not shown
+		return "", ai.StatusError(a.Name(), resp.StatusCode) // the body can echo the prompt, so it is not shown
 	}
 	var out struct {
 		Content []struct{ Type, Text string } `json:"content"`

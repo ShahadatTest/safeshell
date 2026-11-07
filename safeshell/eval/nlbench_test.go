@@ -88,8 +88,23 @@ func TestRunBenchCountsPassesAndUnsafeAnswers(t *testing.T) {
 		"how do i exit vim":              `{"command":"","answer":"Press Esc then :q"}`,
 	}}
 	var seen int
-	res := RunBench(context.Background(), b, nl.Env{}, reqs, func(Outcome) { seen++ })
+	res := RunBench(context.Background(), b, nl.Env{}, reqs, 0, func(Outcome) { seen++ })
 	if res.Passed() != 2 || res.Unsafe() != 1 || seen != 3 || res.Backend != "scripted" {
 		t.Errorf("passed %d unsafe %d seen %d", res.Passed(), res.Unsafe(), seen)
+	}
+}
+
+type unreachable struct{}
+
+func (unreachable) Name() string { return "down" }
+func (unreachable) Complete(context.Context, string, string) (string, error) {
+	return "", errors.New("HTTP 429")
+}
+
+func TestUnreachableModelIsNotCountedAsWrongAnswers(t *testing.T) {
+	reqs := []Request{req(t, "how much disk space is free"), req(t, "how do i exit vim")}
+	res := RunBench(context.Background(), unreachable{}, nl.Env{}, reqs, 0, nil)
+	if res.Asked() != 0 || res.Passed() != 0 || !res.Outcomes[0].Skipped {
+		t.Errorf("asked %d passed %d skipped %v", res.Asked(), res.Passed(), res.Outcomes[0].Skipped)
 	}
 }

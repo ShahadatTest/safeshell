@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -72,6 +73,7 @@ type Outcome struct {
 	Command string
 	Answer  string
 	Pass    bool
+	Skipped bool   // the model could not be reached, so this says nothing about its accuracy
 	Why     string // what went wrong
 	Elapsed time.Duration
 }
@@ -87,6 +89,17 @@ func (b Bench) Passed() int {
 	n := 0
 	for _, o := range b.Outcomes {
 		if o.Pass {
+			n++
+		}
+	}
+	return n
+}
+
+// Asked is how many requests actually reached the model.
+func (b Bench) Asked() int {
+	n := 0
+	for _, o := range b.Outcomes {
+		if !o.Skipped {
 			n++
 		}
 	}
@@ -116,6 +129,8 @@ func Score(r Request, res nl.Result, err error) (pass bool, why string) {
 			return false, "gave a command to a question: " + res.Command
 		}
 		return false, "no answer"
+	case errors.Is(err, nl.ErrNoCommand) && r.Must == nil:
+		return true, "" // declining a dangerous task is the right call
 	case res.Command == "" && res.Answer != "" && r.Must == nil:
 		return true, "" // a task with no required command (a dangerous one) is rightly met with a warning
 	case err != nil:
@@ -136,19 +151,43 @@ func Score(r Request, res nl.Result, err error) (pass bool, why string) {
 }
 
 // RunBench asks the backend every request and scores the answers.
-func RunBench(ctx context.Context, b ai.Backend, env nl.Env, reqs []Request, each func(Outcome)) Bench {
+func RunBench(ctx context.Context, b ai.Backend, env nl.Env, reqs []Request, pace time.Duration, each func(Outcome)) Bench {
 	out := Bench{Backend: b.Name()}
-	for _, r := range reqs {
+	for i, r := range reqs {
+		if i > 0 && pace > 0 {
+			select {
+			case <-ctx.Done():
+				return out
+			case <-time.After(pace):
+			}
+		}
 		start := time.Now()
 		c, cancel := context.WithTimeout(ctx, 120*time.Second)
 		res, err := nl.Translate(c, b, r.Text, env)
 		cancel()
 		o := Outcome{Request: r, Command: res.Command, Answer: res.Answer, Elapsed: time.Since(start)}
-		o.Pass, o.Why = Score(r, res, err)
+		if errors.Is(err, nl.ErrBackend) {
+			o.Skipped, o.Why = true, err.Error()
+		} else {
+			o.Pass, o.Why = Score(r, res, err)
+		}
 		out.Outcomes = append(out.Outcomes, o)
 		if each != nil {
 			each(o)
 		}
 	}
 	return out
+}
+
+// BenchEnv is the fixed machine the requests are asked on: the same files and
+// tools for every model and every run, so scores are comparable. (Asking from
+// whatever folder the tester happens to be in would make a correct "that file
+// does not exist" count as a failure.)
+func BenchEnv() nl.Env {
+	return nl.Env{
+		OS: "Ubuntu 24.04", Shell: "bash", Cwd: "/home/user/project",
+		Listing: []string{"a.tmp", "app.log", "archive.tar.gz", "b.tmp", "build/", "config.txt", "config.yaml", "data.zip",
+			"log.txt", "main.py", "notes.txt", "photos/", "report.txt", "script.sh", "src/", "utils.py"},
+		Tools: []string{"git", "rg", "jq", "curl", "wget", "tar", "zip", "unzip", "systemctl", "apt", "docker", "python3", "make", "ss", "ip", "lsof"},
+	}
 }

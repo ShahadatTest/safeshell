@@ -7,11 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"safeshell/internal/ai"
 )
 
 // Client is one chat endpoint.
@@ -34,33 +35,35 @@ func (c Client) Complete(ctx context.Context, system, user string) (string, erro
 		tokens = "max_tokens"
 	}
 	req := map[string]any{
-		"model": c.Model, tokens: 500,
+		"model": c.Model, tokens: 1500, // room for a thinking model to think and still finish its answer
 		"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": user}},
 	}
 	if c.Temperature != nil {
 		req["temperature"] = *c.Temperature
 	}
 	body, _ := json.Marshal(req)
-	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.URL, "/")+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	hr.Header.Set("Content-Type", "application/json")
-	if c.Key != "" {
-		hr.Header.Set("Authorization", "Bearer "+c.Key)
-	}
 	cl := c.Client
 	if cl == nil {
 		cl = &http.Client{Timeout: 90 * time.Second}
 	}
-	resp, err := cl.Do(hr)
+	resp, err := ai.Do(ctx, cl, func() (*http.Request, error) {
+		hr, err := http.NewRequest(http.MethodPost, strings.TrimRight(c.URL, "/")+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		hr.Header.Set("Content-Type", "application/json")
+		if c.Key != "" {
+			hr.Header.Set("Authorization", "Bearer "+c.Key)
+		}
+		return hr, nil
+	})
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s answered %d", c.Label, resp.StatusCode) // the body can echo the prompt
+		return "", ai.StatusError(c.Label, resp.StatusCode) // the body can echo the prompt, so it is not shown
 	}
 	var out struct {
 		Choices []struct{ Message struct{ Content string } }
