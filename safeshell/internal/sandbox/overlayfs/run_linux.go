@@ -1,0 +1,204 @@
+//go:build linux
+
+package overlayfs
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"safeshell/internal/sandbox"
+)
+
+// Run executes spec.Line inside the sandbox and returns what it did. The real
+// filesystem is never written. The binary must be allowed to create user
+// namespaces with capabilities (see scripts/install-apparmor.sh).
+func Run(ctx context.Context, spec sandbox.Spec) (sandbox.Result, error) {
+	spec = spec.Defaults()
+	cwd := spec.Cwd
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	env := spec.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	shell := spec.Shell
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return sandbox.Result{}, err
+	}
+	scratch, err := os.MkdirTemp(scratchBase(), "ss-sim-")
+	if err != nil {
+		return sandbox.Result{}, err
+	}
+	defer cleanup(scratch)
+
+	mi, _ := os.ReadFile("/proc/self/mountinfo")
+	layers := plan(layerMounts(topDirs(), string(mi)), scratch)
+	for _, l := range layers {
+		for _, d := range []string{l.Upper, l.Work} {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				return sandbox.Result{}, err
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(scratch, "merged"), 0o755); err != nil {
+		return sandbox.Result{}, err
+	}
+	req, _ := json.Marshal(request{Spec: spec, Shell: shell, Cwd: cwd, Env: env, Root: scratch, Layers: layers})
+
+	rr, rw, err := os.Pipe()
+	if err != nil {
+		return sandbox.Result{}, err
+	}
+	defer rr.Close()
+
+	ctx, cancel := context.WithTimeout(ctx, spec.Timeout)
+	defer cancel()
+	stdout, stderr := &capBuffer{max: spec.MaxOutput}, &capBuffer{max: spec.MaxOutput}
+	cmd := exec.CommandContext(ctx, self, "sandbox-init")
+	cmd.Stdin = bytes.NewReader(req)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.ExtraFiles = []*os.File{rw}
+	cmd.WaitDelay = 2 * time.Second
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID |
+			syscall.CLONE_NEWNET | syscall.CLONE_NEWUTS | syscall.CLONE_NEWIPC,
+		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
+		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+		Pdeathsig:   syscall.SIGKILL,
+	}
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		rw.Close()
+		return sandbox.Result{}, fmt.Errorf("start sandbox: %w", err)
+	}
+	rw.Close()
+	_ = cmd.Wait() // init's own status is not used; it reports on fd 3
+	res := sandbox.Result{
+		Stdout: stdout.String(), Stderr: stderr.String(), Duration: time.Since(start),
+		Truncated: stdout.cut || stderr.cut,
+	}
+
+	var out outcome
+	gotOutcome := json.NewDecoder(rr).Decode(&out) == nil
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		res.TimedOut, res.ExitCode = true, -1
+	case !gotOutcome:
+		return res, fmt.Errorf("sandbox ended without a result: %s", firstLine(res.Stderr))
+	case out.Error != "":
+		return res, fmt.Errorf("sandbox setup failed: %s%s", out.Error, detail(res.Stderr))
+	default:
+		res.ExitCode = out.Exit
+	}
+	res.Warnings = out.Warnings
+
+	if len(out.Layers) > 0 {
+		layers = out.Layers
+	}
+	for _, l := range layers {
+		d, err := sandbox.Diff(l.Upper, l.Mount, sandbox.Options{})
+		if err != nil {
+			return res, fmt.Errorf("read changes of %s: %w", l.Mount, err)
+		}
+		for _, c := range d.Changes {
+			c.Path = filepath.Join(strings.TrimPrefix(l.Mount, "/"), c.Path)
+			res.Diff.Changes = append(res.Diff.Changes, c)
+		}
+		res.Diff.Truncated = res.Diff.Truncated || d.Truncated
+	}
+	return res, nil
+}
+
+// cleanup removes the scratch tree. Overlay work directories are created with
+// mode 000, so permissions are opened up first.
+func cleanup(root string) {
+	_ = filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+		if e != nil && e.IsDir() {
+			_ = os.Chmod(p, 0o700)
+		}
+		return nil
+	})
+	_ = os.RemoveAll(root)
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if s == "" {
+		return "no output (is the AppArmor profile installed? run: ss doctor)"
+	}
+	return s
+}
+
+// capBuffer keeps the first max bytes and silently discards the rest, so a
+// chatty command can neither fill memory nor block.
+type capBuffer struct {
+	buf bytes.Buffer
+	max int
+	cut bool
+}
+
+func (c *capBuffer) Write(p []byte) (int, error) {
+	if room := c.max - c.buf.Len(); room > 0 {
+		if len(p) <= room {
+			c.buf.Write(p)
+		} else {
+			c.buf.Write(p[:room])
+			c.cut = true
+		}
+	} else if len(p) > 0 {
+		c.cut = true
+	}
+	return len(p), nil
+}
+
+func (c *capBuffer) String() string { return c.buf.String() }
+
+// scratchBase picks where the scratch layers live. They must not sit inside
+// the filesystem being overlaid or the kernel refuses the mount (EINVAL), so
+// the per-user runtime directory (a tmpfs on systemd machines) comes first.
+func scratchBase() string {
+	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			return d
+		}
+	}
+	return os.TempDir()
+}
+
+// detail appends whatever the child printed, which helps explain a setup failure.
+func detail(stderr string) string {
+	if strings.TrimSpace(stderr) == "" {
+		return ""
+	}
+	return "\n" + strings.TrimRight(stderr, "\n")
+}
+
+// topDirs lists the real directories directly under "/" that get an overlay.
+func topDirs() []string {
+	entries, _ := os.ReadDir("/")
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && e.Type()&os.ModeSymlink == 0 && !isSpecialTop(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
