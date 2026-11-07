@@ -1,4 +1,4 @@
-.PHONY: build test cover fuzz vet fmt check clean
+.PHONY: build test integration cover fuzz vet fmt check clean
 
 build:
 	go build -o bin/ss ./cmd/ss
@@ -14,6 +14,10 @@ FUZZTIME ?= 20s
 fuzz:
 	go test ./internal/shellparse -run xxx -fuzz FuzzParse -fuzztime $(FUZZTIME)
 	go test ./internal/classify -run xxx -fuzz FuzzClassify -fuzztime $(FUZZTIME)
+
+# Runs the real binary against the real kernel; needs the AppArmor profile (scripts/install-apparmor.sh).
+integration: build
+	go test -count=1 -v ./test/integration
 
 vet:
 	go vet ./...
