@@ -10,7 +10,7 @@ type topic struct{ name, title, body string }
 
 var helpTopics = []topic{
 	{"start", "Get started in two minutes", `1. Add SafeShell to your shell (once):
-     echo 'eval "$(ss hook bash)"' >> ~/.bashrc      (zsh: ss hook zsh, in ~/.zshrc)
+     ss install            (adds the hook to ~/.bashrc or ~/.zshrc; undo with ss uninstall)
    Open a new terminal. From now on every command you press Enter on is checked first.
 2. Get the built-in AI (optional, free, private, one download):
      ss ai setup
@@ -64,6 +64,7 @@ be restored exactly, it tells you instead of claiming success.`},
    ss undo / ss snapshots     restore / list
    ss models  (or /models)    choose a local model or connect Claude, GPT, Gemini
    ss ai setup|status|stop    manage the built-in AI
+   ss install / ss uninstall  add or remove the hook in your shell startup file
    ss hook bash|zsh           print the shell hook
    ss doctor                  what this machine supports (sandbox, AI, snapshots)
    Inside your terminal:  /models   /help`},

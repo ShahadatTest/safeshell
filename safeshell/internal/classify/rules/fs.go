@@ -35,7 +35,8 @@ func ruleRm(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R3, c, "Recursively and permanently deletes whole folders. There is no recycle bin.").
 			WithAlt(trash, "moves them to the Trash so they can be restored"))
 	case c.ViaXargs || c.ViaFind:
-		return one(fnd(R2, c, "Deletes whatever files are passed in, and you cannot see the list first."))
+		return one(fnd(R3, c, "Deletes whatever files are passed in, and you cannot see the list first.").
+			WithAlt("trash-put <the same files>", "moves them to the Trash so they can be restored"))
 	case len(f.pos) == 0:
 		return one(fnd(R1, c, "No files given, so nothing will be deleted."))
 	}
@@ -72,7 +73,7 @@ func ruleMv(c shellparse.Command, f flags) []Finding {
 	var out []Finding
 	for i, p := range f.pos {
 		if ok, what := Critical(p); ok && i < len(f.pos)-1 {
-			out = append(out, fnd(R3, c, "Moves "+what+" away, which can break the system or lose access to your files."))
+			out = append(out, fnd(R4, c, "Moves "+what+" away, which breaks the system or loses access to your files."))
 		}
 	}
 	if n := len(f.pos); n > 1 && f.pos[n-1] == "/dev/null" {
@@ -88,6 +89,9 @@ func ruleMv(c shellparse.Command, f flags) []Finding {
 }
 
 func ruleCp(c shellparse.Command, f flags) []Finding {
+	if n := len(f.pos); n > 1 && UnderSystem(Norm(f.pos[n-1])) {
+		return one(fnd(R2, c, "Overwrites a system file with this one. A wrong file here can stop a service from starting."))
+	}
 	if f.has('f', "force") {
 		return one(fnd(R2, c, "Overwrites existing files at the destination without asking.").WithAlt("cp -i "+targets(f), "asks before overwriting"))
 	}
@@ -129,6 +133,12 @@ func ruleFind(c shellparse.Command, f flags) []Finding {
 }
 
 func ruleTar(c shellparse.Command, f flags) []Finding {
+	if f.has('t', "list") && !f.has('x', "extract") && !f.has('c', "create") {
+		return one(fnd(R0, c, "Only lists what is inside the archive."))
+	}
+	if f.has('x', "extract") && !f.hasAny("--remove-files") {
+		return one(fnd(R2, c, "Extracts files, overwriting any that already exist with the same name."))
+	}
 	if f.hasAny("--remove-files") {
 		return one(fnd(R2, c, "Deletes the original files after adding them to the archive."))
 	}
@@ -136,6 +146,9 @@ func ruleTar(c shellparse.Command, f flags) []Finding {
 }
 
 func ruleUnzip(c shellparse.Command, f flags) []Finding {
+	if f.has('l', "") || f.has('t', "") || f.has('Z', "") {
+		return one(fnd(R0, c, "Only lists or tests the archive."))
+	}
 	if f.has('o', "") {
 		return one(fnd(R2, c, "Extracts and overwrites existing files without asking."))
 	}
@@ -154,4 +167,13 @@ func ruleAwk(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R2, c, "The awk program writes to files or runs other commands."))
 	}
 	return one(fnd(R0, c, "Only reads and prints text."))
+}
+
+func ruleTruncate(c shellparse.Command, f flags) []Finding {
+	for _, p := range f.pos {
+		if n := Norm(p); UnderSystem(n) || strings.HasPrefix(n, "/var/lib/") {
+			return one(fnd(R3, c, "Cuts a system or database file. Its contents are lost and the service using it can fail."))
+		}
+	}
+	return one(fnd(R2, c, "Cuts a file to a fixed size and can remove its contents."))
 }

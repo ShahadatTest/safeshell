@@ -20,7 +20,13 @@ func ruleKill(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R2, c, "Force-kills a process. It gets no chance to save work or clean up.").
 			WithAlt("kill "+strings.Join(f.pos, " "), "asks the program to quit politely first"))
 	}
-	return one(fnd(R1, c, "Asks a process to stop."))
+	return one(fnd(R2, c, "Stops a process. Unsaved work in it is lost."))
+}
+
+func ruleKillall(c shellparse.Command, f flags) []Finding {
+	alt := "pgrep -a " + strings.Join(f.pos, " ")
+	return one(fnd(R3, c, "Stops EVERY process with this name, for every program that shares it. Unsaved work in all of them is lost.").
+		WithAlt(alt, "lists what would match, without stopping anything"))
 }
 
 func rulePkill(c shellparse.Command, f flags) []Finding {

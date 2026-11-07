@@ -1,4 +1,4 @@
-.PHONY: build test integration cover fuzz vet fmt check clean
+.PHONY: build test integration cover fuzz vet fmt check clean dist deb clean-dist
 
 build:
 	go build -o bin/ss ./cmd/ss
@@ -34,3 +34,27 @@ check: vet
 
 clean:
 	rm -rf bin coverage.out
+
+# Release artefacts. CGO is off, so the binaries are static and run on any Linux.
+VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
+dist: clean-dist
+	@for arch in amd64 arm64; do \
+	  d=dist/safeshell-$(VERSION)-linux-$$arch; mkdir -p $$d; \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "-s -w" -o $$d/ss ./cmd/ss || exit 1; \
+	  cp -r scripts packaging $$d/; \
+	  tar -czf dist/safeshell-$(VERSION)-linux-$$arch.tar.gz -C dist safeshell-$(VERSION)-linux-$$arch; \
+	done
+	@cd dist && sha256sum *.tar.gz > SHA256SUMS && ls -l *.tar.gz
+
+# A Debian package for amd64: installs /usr/bin/ss and the AppArmor rule for exactly that path.
+deb: clean-dist
+	@command -v dpkg-deb >/dev/null || { echo "dpkg-deb not found"; exit 1; }
+	@root=dist/deb/safeshell; mkdir -p $$root/DEBIAN $$root/usr/bin $$root/etc/apparmor.d; \
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o $$root/usr/bin/ss ./cmd/ss; \
+	sed 's#@BIN@#/usr/bin/ss#' packaging/apparmor/safeshell-ss.tmpl > $$root/etc/apparmor.d/safeshell-ss; \
+	cp packaging/deb/postinst packaging/deb/postrm $$root/DEBIAN/; \
+	printf 'Package: safeshell\nVersion: 0.1.0\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: SafeShell team <noreply@example.invalid>\nDescription: A safety layer for your terminal\n Rates every command by how reversible it is, shows what it would do in a sandbox,\n blocks the dangerous ones, and lets you undo. Optional built-in AI.\n' > $$root/DEBIAN/control; \
+	dpkg-deb --build --root-owner-group $$root dist/safeshell_0.1.0_amd64.deb && dpkg-deb -I dist/safeshell_0.1.0_amd64.deb | head -8
+
+clean-dist:
+	@find dist -mindepth 1 -delete 2>/dev/null; mkdir -p dist

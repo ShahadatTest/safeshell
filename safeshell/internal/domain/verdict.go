@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Level is the reversibility class of a command. Higher is more dangerous.
 type Level int
@@ -22,6 +25,21 @@ func (l Level) Label() string { return labels[l] }
 
 // MarshalJSON writes the level as "R3" rather than 3.
 func (l Level) MarshalJSON() ([]byte, error) { return json.Marshal(l.String()) }
+
+// UnmarshalJSON reads "R3" back into a Level, so analyses can cross the daemon socket.
+func (l *Level) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	for i, n := range [...]string{"R0", "R1", "R2", "R3", "R4"} {
+		if s == n {
+			*l = Level(i)
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown level %q", s)
+}
 
 // Alternative is a safer command offered instead of the one typed.
 type Alternative struct {

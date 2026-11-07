@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"safeshell/internal/ai"
 	"safeshell/internal/audit"
+	"safeshell/internal/engine"
+	"safeshell/internal/ipc"
 	"strings"
 	"testing"
 
@@ -83,7 +87,7 @@ func TestHookPrintsScript(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "bind -x") {
 		t.Errorf("code %d out %q", code, out)
 	}
-	if _, out, _ := runSS("hook", "zsh"); !strings.Contains(out, "zle -N accept-line") {
+	if _, out, _ := runSS("hook", "zsh"); !strings.Contains(out, "zle -N ${__ss_w}") {
 		t.Errorf("zsh: %q", out)
 	}
 }
@@ -91,7 +95,8 @@ func TestHookPrintsScript(t *testing.T) {
 func TestMain(m *testing.M) { // never write the real audit log from tests
 	d, _ := os.MkdirTemp("", "ss-audit")
 	auditPath = func() string { return filepath.Join(d, "audit.jsonl") }
-	backend = func() (ai.Backend, error) { return nil, nil } // tests never reach a real model
+	backend = func() (ai.Backend, error) { return nil, nil }                 // tests never reach a real model
+	socketPath = func() string { return filepath.Join(d, "no-daemon.sock") } // nor a real daemon
 	code := m.Run()
 	os.RemoveAll(d)
 	os.Exit(code)
@@ -131,5 +136,120 @@ func TestGuardLogsEveryOutcome(t *testing.T) {
 	runSS("guard", "--", "ls")
 	if e := lastAudit(t); e.Outcome != "allowed" {
 		t.Errorf("%+v", e)
+	}
+}
+
+func TestInstallAndUninstallEditOnlyTheHookBlock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+	rc := filepath.Join(home, ".bashrc")
+	os.WriteFile(rc, []byte("export KEEP=1\n"), 0o644)
+	if code, out, _ := runSS("install"); code != 0 || !strings.Contains(out, "Added the SafeShell hook") {
+		t.Fatalf("%d %q", code, out)
+	}
+	if b, _ := os.ReadFile(rc); !strings.Contains(string(b), "hook bash") || !strings.HasPrefix(string(b), "export KEEP=1\n") {
+		t.Errorf("%q", b)
+	}
+	if _, out, _ := runSS("install"); !strings.Contains(out, "already in") {
+		t.Errorf("second install: %q", out)
+	}
+	if code, out, _ := runSS("uninstall"); code != 0 || !strings.Contains(out, "Removed") {
+		t.Fatalf("%d %q", code, out)
+	}
+	if b, _ := os.ReadFile(rc); string(b) != "export KEEP=1\n" {
+		t.Errorf("uninstall changed more than the block: %q", b)
+	}
+	if _, out, _ := runSS("uninstall"); !strings.Contains(out, "was not in") {
+		t.Errorf("%q", out)
+	}
+}
+
+func TestInstallRefusesUnsupportedShellsAndBadOptions(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SHELL", "/usr/bin/fish")
+	if code, _, e := runSS("install"); code != 1 || !strings.Contains(e, "fish") {
+		t.Errorf("%d %q", code, e)
+	}
+	if code, _, _ := runSS("install", "--bogus"); code != 2 {
+		t.Error("usage")
+	}
+}
+
+func withDaemon(t *testing.T, a engine.Analysis, seenEnv *[]string) {
+	t.Helper()
+	old, oldPath := analyze, socketPath
+	t.Cleanup(func() { analyze, socketPath = old, oldPath })
+	analyze = func(ctx context.Context, line, cwd string) engine.Analysis {
+		if e, ok := ctx.Value(envProbe{}).([]string); ok && seenEnv != nil {
+			*seenEnv = e
+		}
+		return a
+	}
+	path := filepath.Join(t.TempDir(), "d.sock")
+	socketPath = func() string { return path }
+	l, err := ipc.Listen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { (&ipc.Server{Handlers: daemonHandlers(cancel)}).Serve(ctx, l); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+}
+
+type envProbe struct{}
+
+func TestAnalyzeFastUsesTheDaemonWhenItIsRunningAndFallsBackWhenNot(t *testing.T) {
+	t.Setenv("SAFESHELL_NODAEMON", "")
+	local := sampleAnalysis()
+	local.Line = "ran-locally"
+	fakeAnalyze(t, local)
+	socketPath = func() string { return filepath.Join(t.TempDir(), "nothing.sock") }
+	if a := analyzeFast(context.Background(), "x", "/"); a.Line != "ran-locally" {
+		t.Errorf("no daemon: %q", a.Line)
+	}
+	remote := sampleAnalysis()
+	remote.Line = "ran-in-daemon"
+	withDaemon(t, remote, nil)
+	got := analyzeFast(context.Background(), "x", "/")
+	if got.Line != "ran-in-daemon" || got.Level != domain.R3 || got.Decision != domain.Block || len(got.Effects) != 1 || got.Effects[0].Evidence != domain.Observed {
+		t.Errorf("through the daemon: %+v", got)
+	}
+	t.Setenv("SAFESHELL_NODAEMON", "1")
+	fakeAnalyze(t, local)
+	if a := analyzeFast(context.Background(), "x", "/"); a.Line != "ran-locally" {
+		t.Error("SAFESHELL_NODAEMON must bypass the daemon")
+	}
+}
+
+func TestDaemonMethods(t *testing.T) {
+	withDaemon(t, sampleAnalysis(), nil)
+	var ping struct{ Protocol int }
+	if err := ipc.Call(context.Background(), socketPath(), "ping", nil, &ping); err != nil || ping.Protocol != ipc.Protocol {
+		t.Errorf("%+v %v", ping, err)
+	}
+	var v domain.Verdict
+	if err := ipc.Call(context.Background(), socketPath(), "check", map[string]string{"line": "rm -rf ~/x"}, &v); err != nil || v.Level != domain.R3 {
+		t.Errorf("check: %v %v", v.Level, err)
+	}
+	var e *ipc.Error
+	if err := ipc.Call(context.Background(), socketPath(), "check", map[string]string{}, nil); !errors.As(err, &e) || e.Code != ipc.CodeBadParams {
+		t.Errorf("empty line: %v", err)
+	}
+	if err := ipc.Call(context.Background(), socketPath(), "status", nil, nil); err != nil {
+		t.Errorf("status: %v", err)
+	}
+}
+
+func TestDaemonCommandUsageAndStopWhenNotRunning(t *testing.T) {
+	socketPath = func() string { return "/nonexistent/none.sock" }
+	t.Cleanup(func() { socketPath = ipc.SocketPath })
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	if code, out, _ := runSS("daemon", "stop"); code != 0 || !strings.Contains(out, "not running") {
+		t.Errorf("%d %q", code, out)
+	}
+	if code, _, _ := runSS("daemon", "bogus"); code != 2 {
+		t.Error("usage")
 	}
 }

@@ -48,3 +48,36 @@ func TestNoDangerousFalseNegatives(t *testing.T) {
 		t.Errorf("dangerous command under-rated: %q want %s got %s", r.Command, r.Want, r.Got)
 	}
 }
+
+// The held-out set was written by someone who had not seen the rules. Results at
+// the time of writing: 92.3% exact, all but one miss within one level (a POST labelled a read), and the six
+// dangerous-side misses are all debatable labels (sudo-raising of an install or
+// kill, a recursive chown of your own tree, and shutdown/reboot rated R3 where
+// the labeller said R4). These floors stop the rules from drifting back.
+func TestHeldoutReport(t *testing.T) {
+	rows, err := LoadHeldout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Evaluate(rows)
+	t.Logf("held-out: %d of %d exact (%.1f%%), %d dangerous under-ratings", m.Correct, m.Total, 100*float64(m.Correct)/float64(m.Total), len(m.SevereMisses))
+	far := 0
+	for _, r := range m.Mismatches {
+		t.Logf("  want %s got %s  %s   [%s]", r.Want, r.Got, r.Command, r.Note)
+		if d := int(r.Want) - int(r.Got); d > 1 || d < -1 {
+			far++
+		}
+	}
+	if m.Total < 200 {
+		t.Errorf("only %d held-out rows", m.Total)
+	}
+	if acc := float64(m.Correct) / float64(m.Total); acc < 0.90 {
+		t.Errorf("held-out accuracy fell to %.1f%%", acc*100)
+	}
+	if far > 1 { // the one known case is a POST the labeller called a read
+		t.Errorf("%d held-out rows are off by more than one level", far)
+	}
+	if len(m.SevereMisses) > 6 {
+		t.Errorf("%d dangerous under-ratings, up from 6", len(m.SevereMisses))
+	}
+}

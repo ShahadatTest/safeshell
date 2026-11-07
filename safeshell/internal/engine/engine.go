@@ -25,6 +25,14 @@ type Simulator interface {
 // file sandbox cannot see (which processes a kill hits, which disk a dd erases).
 type Inspector func(cmds []shellparse.Command) []domain.Effect
 
+type envKey struct{}
+
+// WithEnv attaches the caller's environment, which the simulated command
+// should see (PATH, virtualenvs, ...) rather than that of a long-running daemon.
+func WithEnv(ctx context.Context, env []string) context.Context {
+	return context.WithValue(ctx, envKey{}, env)
+}
+
 // Engine analyses commands. A nil Sim means no sandbox is available here.
 type Engine struct {
 	Sim        Simulator
@@ -83,7 +91,8 @@ func (a *Analysis) simulate(ctx context.Context, sim Simulator, cwd string) {
 		a.Effects = append(a.Effects, a.estimated("file changes could not be observed"))
 		return
 	}
-	res, err := sim.Simulate(ctx, sandbox.Spec{Line: a.Line, Cwd: cwd})
+	env, _ := ctx.Value(envKey{}).([]string)
+	res, err := sim.Simulate(ctx, sandbox.Spec{Line: a.Line, Cwd: cwd, Env: env})
 	if err != nil {
 		a.SimNote = "simulation failed: " + err.Error()
 		a.Effects = append(a.Effects, a.estimated("the sandbox run failed, so file changes could not be observed"))

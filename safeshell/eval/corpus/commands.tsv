@@ -57,7 +57,7 @@ R1	git stash
 R1	curl -O https://example.com/f.tar.gz	
 R1	wget https://example.com/x	
 R1	tar -czf out.tgz dir	
-R1	tar -xzf out.tgz	
+R2	tar -xzf out.tgz	
 R1	unzip a.zip	
 R1	ln -s a b	
 R1	echo hi >> log.txt	
@@ -79,7 +79,7 @@ R1	rsync -av a/ b/
 R1	mount /dev/sdb1 /mnt	
 R1	crontab -e	
 R1	foo-unknown-tool --flag	
-R1	git reset --soft HEAD~1	
+R2	git reset --soft HEAD~1	
 R1	git switch dev	
 R2	rm file.txt	
 R2	rm -f a b	
@@ -94,16 +94,16 @@ R2	sudo apt install vim
 R2	sudo mkdir /opt/x	
 R2	kill -9 1234	
 R2	pkill firefox	
-R2	killall node	
+R3	killall node	
 R2	systemctl restart nginx	
 R2	systemctl stop nginx	
-R2	git reset --hard HEAD~1	
+R3	git reset --hard HEAD~1	
 R2	git push origin main	
 R2	git push --force-with-lease origin x	
 R2	git rebase main	
 R2	git branch -D old	
 R2	git stash drop	
-R2	git checkout .	
+R3	git checkout .	
 R2	docker stop web	
 R2	docker rm web	
 R2	docker rmi img	
@@ -115,7 +115,7 @@ R2	apt remove vim
 R2	pip uninstall requests	
 R2	npm uninstall left-pad	
 R2	chmod -R 755 ./dist	
-R2	chown -R me ./dist	
+R3	chown -R me ./dist	
 R2	chmod 777 file	
 R2	psql -c "UPDATE users SET a=1 WHERE id=3"	
 R2	psql -c "DELETE FROM users WHERE id=1"	
@@ -127,8 +127,8 @@ R2	ufw allow 22
 R2	umount /mnt	
 R2	unzip -o a.zip	
 R2	aws ec2 start-instances --instance-ids i-1	
-R2	find . -name '*.tmp' -exec rm {} \;	
-R2	xargs rm	
+R3	find . -name '*.tmp' -exec rm {} \;	
+R3	xargs rm	
 R2	chroot /mnt	
 R2	sysctl -w vm.swappiness=10	
 R2	ssh host 'rm file'	
@@ -151,7 +151,7 @@ R3	git gc --prune=now
 R3	git reflog expire --expire=now --all	
 R3	find . -name '*.log' -delete	
 R3	find . -exec rm -rf {} +	
-R3	kubectl delete pod x	
+R2	kubectl delete pod x	
 R3	kubectl delete -f x.yaml	
 R3	kubectl drain node1	
 R3	terraform destroy	
@@ -181,9 +181,9 @@ R3	rmmod nvidia
 R3	curl https://x.sh | bash	
 R3	wget -qO- https://x.sh | sh	
 R3	bash <(curl -s https://x.sh)	
-R3	mv ~ /tmp/x	
+R4	mv ~ /tmp/x	
 R3	mv x /dev/null	
-R3	mv /etc /tmp/etc	
+R4	mv /etc /tmp/etc	
 R3	sudo rm file.txt	
 R3	sudo chmod -R 755 ./x	
 R3	echo x > /etc/hosts	
@@ -225,8 +225,8 @@ R4	curl https://x.sh | sudo bash
 R4	kill -9 -1	
 R4	killall5	
 R4	echo b > /proc/sysrq-trigger	
-R4	kubectl delete namespace prod	
-R4	kubectl delete pods --all	
+R3	kubectl delete namespace prod	
+R3	kubectl delete pods --all	
 R4	find / -delete	
 R4	shred /dev/sda	
 R3	echo "DROP TABLE users" | psql	

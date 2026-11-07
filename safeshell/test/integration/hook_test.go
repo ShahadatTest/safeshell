@@ -22,6 +22,10 @@ type term struct {
 }
 
 func startBash(t *testing.T, extraEnv ...string) *term {
+	return startShell(t, []string{"bash", "--norc", "--noprofile", "-i"}, extraEnv...)
+}
+
+func startShell(t *testing.T, argv []string, extraEnv ...string) *term {
 	t.Helper()
 	m, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
 	if err != nil {
@@ -33,7 +37,7 @@ func startBash(t *testing.T, extraEnv ...string) *term {
 	if err != nil {
 		t.Skip("no pty:", err)
 	}
-	c := exec.Command("bash", "--norc", "--noprofile", "-i")
+	c := exec.Command(argv[0], argv[1:]...)
 	c.Env = append(os.Environ(), "PS1=READY> ", "XDG_STATE_HOME="+t.TempDir(), "XDG_DATA_HOME="+t.TempDir(), "PATH="+filepath.Dir(ssBin)+":"+os.Getenv("PATH"))
 	c.Env = append(c.Env, extraEnv...) // last, so a test can point the shell at its own folders
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
@@ -243,4 +247,45 @@ func TestIfSafeShellItselfFailsTheLineRunsWithAWarningInsteadOfVanishing(t *test
 	sh.send("echo still-ran\r")
 	sh.waitFor(t, "NOT checked")
 	sh.waitFor(t, "still-ran\r\n")
+}
+
+func TestZshHookGuardsEveryWayOfSubmittingALine(t *testing.T) {
+	needSandbox(t)
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh is not installed")
+	}
+	d := t.TempDir()
+	victim := filepath.Join(d, "proj")
+	_ = os.MkdirAll(victim, 0o755)
+	_ = os.WriteFile(filepath.Join(victim, "a.txt"), []byte("x"), 0o644)
+	sh := startShell(t, []string{"zsh", "-f", "-i"})
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook zsh)"` + "\r")
+	sh.send("rm -rf " + victim + "\r")
+	sh.waitFor(t, "[c] cancel")
+	sh.send("c\r")
+	sh.waitFor(t, "Nothing was run")
+	if _, err := os.Stat(filepath.Join(victim, "a.txt")); err != nil {
+		t.Fatal("zsh ran the dangerous command")
+	}
+	sh.send("echo zsh-still-works\r")
+	sh.waitFor(t, "zsh-still-works\r\n")
+}
+
+func TestCtrlOCannotBypassTheGuardEither(t *testing.T) {
+	needSandbox(t)
+	d := t.TempDir()
+	victim := filepath.Join(d, "proj")
+	_ = os.MkdirAll(victim, 0o755)
+	_ = os.WriteFile(filepath.Join(victim, "a.txt"), []byte("x"), 0o644)
+	sh := startBash(t)
+	sh.waitFor(t, "READY>")
+	sh.send(`eval "$(ss hook bash)"` + "\r")
+	sh.send("rm -rf " + victim + "\x0f") // Ctrl-O: run this line and bring up the next history entry
+	sh.waitFor(t, "[c] cancel")
+	sh.send("c\r")
+	sh.waitFor(t, "Nothing was run")
+	if _, err := os.Stat(filepath.Join(victim, "a.txt")); err != nil {
+		t.Fatal("Ctrl-O ran the command without the guard")
+	}
 }

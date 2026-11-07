@@ -44,6 +44,9 @@ Usage:
   ss ai setup|status               download the built-in model (once) / show AI state
   ss undo [ID]                     put back what the last approved command changed, and verify it
   ss snapshots                     list saved snapshots
+  ss daemon [stop]                 keep SafeShell warm in the background (optional; faster checks)
+  ss install [--ai]                add the hook to your shell startup file (and set up the AI)
+  ss uninstall                     remove the hook
   ss hook bash|zsh                 print the shell hook; add  eval "$(ss hook bash)"  to your rc file
   ss doctor                        show what this machine allows (sandbox, snapshots, AI)
 
@@ -79,6 +82,12 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 		return runSimulate(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr, color)
+	case "daemon":
+		return runDaemon(args[1:], stdout, stderr)
+	case "install":
+		return runInstall(args[1:], stdout, stderr)
+	case "uninstall":
+		return runUninstall(stdout, stderr)
 	case "models":
 		return runModels(guardInput(), stdout)
 	case "help":

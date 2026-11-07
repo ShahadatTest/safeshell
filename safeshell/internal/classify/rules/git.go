@@ -19,10 +19,13 @@ func ruleGit(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R2, c, "Publishes commits to a shared remote. Hard to take back once others pull them."))
 	case "reset":
 		if f.hasAny("--hard") {
-			return one(fnd(R2, c, "Throws away all uncommitted changes. Committed work stays recoverable through the reflog.").
+			return one(fnd(R3, c, "Throws away all uncommitted changes for good. Committed work stays recoverable through the reflog, but edits that were never committed cannot be brought back.").
 				WithAlt("git stash", "saves your changes first so they can be brought back"))
 		}
-		return one(fnd(R1, c, "Moves the branch pointer. Files are kept."))
+		if len(f.pos) > 1 && strings.ContainsAny(f.pos[len(f.pos)-1], "~^") { // git reset HEAD~1: rewinds history
+			return one(fnd(R2, c, "Moves the branch back and rewrites its history. The commits stay in the reflog."))
+		}
+		return one(fnd(R1, c, "Moves the branch pointer or unstages files. Files are kept."))
 	case "clean":
 		if f.has('n', "dry-run") {
 			return one(fnd(R0, c, "Only lists the untracked files it would remove."))
@@ -33,10 +36,19 @@ func ruleGit(c shellparse.Command, f flags) []Finding {
 		}
 		return one(fnd(R1, c, "Refuses to delete without -f."))
 	case "checkout", "restore", "switch":
-		if f.hasAny(".") || f.hasAny("--", "-f", "--force", "--discard-changes") && f.hasAny(".") {
-			return one(fnd(R2, c, "Discards uncommitted changes in the working folder."))
+		switch {
+		case f.hasAny(".") || anyPrefix(f.pos, ":/"):
+			return one(fnd(R3, c, "Discards every uncommitted change in the working folder. They cannot be brought back.").
+				WithAlt("git stash", "saves your changes first so they can be brought back"))
+		case f.hasAny("--") && len(f.pos) > 1: // git checkout -- file: throws away that file's edits
+			return one(fnd(R2, c, "Discards the uncommitted changes in these files."))
 		}
 		return one(fnd(R1, c, "Switches branches or restores files."))
+	case "commit":
+		if f.hasAny("--amend") {
+			return one(fnd(R2, c, "Rewrites the last commit. The old one stays in the reflog."))
+		}
+		return one(fnd(R1, c, "Records a commit."))
 	case "branch":
 		if f.hasAny("-D") || (f.has('d', "delete") && f.has('f', "force")) {
 			return one(fnd(R2, c, "Deletes a branch even if it is not merged. Recoverable through the reflog."))
@@ -54,7 +66,19 @@ func ruleGit(c shellparse.Command, f flags) []Finding {
 			return one(fnd(R2, c, "Deletes saved stashes."))
 		}
 		return one(fnd(R1, c, "Saves or restores changes."))
-	case "status", "log", "diff", "show", "fetch", "blame", "ls-files", "describe", "remote", "config", "rev-parse", "grep", "shortlog", "ls-remote", "":
+	case "fetch", "pull":
+		return one(fnd(R1, c, "Downloads new commits from the remote."))
+	case "remote":
+		if len(f.pos) <= 1 || f.pos[1] == "show" || f.pos[1] == "get-url" || f.pos[1] == "-v" {
+			return one(fnd(R0, c, "Only lists remotes."))
+		}
+		return one(fnd(R1, c, "Changes the list of remotes."))
+	case "config":
+		if f.hasAny("--get", "--list", "-l", "--get-all") || len(f.pos) <= 2 {
+			return one(fnd(R0, c, "Only reads git settings."))
+		}
+		return one(fnd(R1, c, "Changes a git setting."))
+	case "status", "log", "diff", "show", "blame", "ls-files", "describe", "rev-parse", "grep", "shortlog", "ls-remote", "":
 		return one(fnd(R0, c, "Only reads repository information."))
 	}
 	return one(fnd(R1, c, "Changes the local repository. Reversible through git history."))

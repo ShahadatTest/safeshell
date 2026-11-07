@@ -55,8 +55,10 @@ func rulePerm(c shellparse.Command, f flags) []Finding {
 	insecure := c.Name == "chmod" && f.hasAny("777", "666", "a+rwx", "ugo+rwx")
 	switch {
 	case recursive && insecure:
-		return one(fnd(R2, c, "Gives everyone full access to every file in the folder. This is a security hole.").
+		return one(fnd(R3, c, "Gives everyone full access to every file in the folder. This is a security hole.").
 			WithAlt("chmod -R u+rwX,go-w "+targetsAfterMode(f), "grants access to you only"))
+	case recursive && c.Name != "chmod" && !selfOwner(f):
+		return one(fnd(R3, c, "Changes the owner of a whole tree to someone else. The old owners are not saved, so it cannot be put back exactly."))
 	case recursive:
 		return one(fnd(R2, c, "Changes permissions or owners of many files at once. The old values are not saved."))
 	case insecure:
@@ -70,4 +72,16 @@ func targetsAfterMode(f flags) string {
 		return strings.Join(f.pos[1:], " ")
 	}
 	return "."
+}
+
+// selfOwner reports whether a recursive chown/chgrp hands files to the current
+// user, which is the usual way to repair a tree.
+func selfOwner(f flags) bool {
+	for _, p := range f.pos {
+		if strings.HasPrefix(p, "$USER") || strings.HasPrefix(p, "${USER") || strings.HasPrefix(p, "$(whoami)") || strings.HasPrefix(p, "$(id -un)") {
+			return true
+		}
+		return false // the first operand is the owner
+	}
+	return false
 }

@@ -32,7 +32,7 @@ var table map[string]rule
 func init() {
 	table = map[string]rule{
 		"rm": ruleRm, "unlink": fixed(R2, "Permanently removes a file."), "shred": ruleShred, "srm": ruleShred,
-		"truncate": fixed(R2, "Cuts a file to a fixed size and can remove its contents."),
+		"truncate": ruleTruncate,
 		"mv":       ruleMv, "cp": ruleCp, "ln": ruleLn,
 		"mkdir": fixed(R1, "Creates folders. Easy to undo."), "touch": fixed(R1, "Creates or touches files. Easy to undo."),
 		"rmdir": fixed(R1, "Removes empty folders only."),
@@ -41,7 +41,7 @@ func init() {
 		"blkdiscard": fixed(R4, "Discards every block on a device. All data on it is destroyed."),
 		"wipefs":     ruleWipefs, "fdisk": ruleFdisk, "sfdisk": ruleFdisk, "gdisk": ruleFdisk, "parted": ruleParted,
 		"chmod": rulePerm, "chown": rulePerm, "chgrp": rulePerm,
-		"kill": ruleKill, "pkill": rulePkill, "killall": rulePkill,
+		"kill": ruleKill, "pkill": rulePkill, "killall": ruleKillall,
 		"killall5": fixed(R4, "Kills every process on the machine."),
 		"shutdown": rulePower, "reboot": rulePower, "halt": rulePower, "poweroff": rulePower, "telinit": rulePower,
 		"systemctl": ruleSystemctl, "service": ruleService,
@@ -67,7 +67,7 @@ func init() {
 		"passwd": fixed(R2, "Changes a password."), "chroot": fixed(R2, "Runs commands inside a different root folder."),
 		"visudo": fixed(R2, "Edits who is allowed to use sudo."),
 		"sh":     ruleShell, "bash": ruleShell, "zsh": ruleShell, "dash": ruleShell, "ksh": ruleShell, "fish": ruleShell, "eval": ruleShell,
-		"ssh": fixed(R1, "Connects to another machine. Commands run there are checked separately."), "scp": fixed(R1, "Copies files to or from another machine. Existing files may be overwritten."),
+		"ssh": ruleSsh, "scp": fixed(R1, "Copies files to or from another machine. Existing files may be overwritten."),
 		"tar": ruleTar, "unzip": ruleUnzip, "npm": ruleNpm,
 	}
 }

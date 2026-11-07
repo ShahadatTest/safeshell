@@ -10,6 +10,18 @@ func ruleDocker(c shellparse.Command, f flags) []Finding {
 	switch f.sub() {
 	case "ps", "images", "logs", "inspect", "info", "version", "stats", "top", "history", "ls", "search", "diff", "port":
 		return one(fnd(R0, c, "Only reads container information."))
+	case "compose":
+		if len(f.pos) > 1 && f.pos[1] == "down" && f.has('v', "volumes") {
+			return one(fnd(R3, c, "Stops the project and deletes its volumes, which hold the data of databases and similar services."))
+		}
+		return one(fnd(R2, c, "Starts, stops or rebuilds a project's containers."))
+	case "down":
+		if c.Name == "docker-compose" {
+			if f.has('v', "volumes") {
+				return one(fnd(R3, c, "Stops the project and deletes its volumes, which hold the data of databases and similar services."))
+			}
+			return one(fnd(R2, c, "Stops and removes the project's containers."))
+		}
 	case "stop", "kill", "restart", "pause":
 		return one(fnd(R2, c, "Stops running containers and the services in them."))
 	case "rm", "rmi":
@@ -36,7 +48,11 @@ func ruleKubectl(c shellparse.Command, f flags) []Finding {
 		return one(fnd(R0, c, "Only reads cluster information."))
 	case "delete":
 		if f.hasAny("--all", "-A", "--all-namespaces") || (len(f.pos) > 1 && (f.pos[1] == "namespace" || f.pos[1] == "ns" || f.pos[1] == "namespaces")) {
-			return one(fnd(R4, c, "Deletes a whole namespace or every object of a kind. This can take down production services."))
+			return one(fnd(R3, c, "Deletes a whole namespace or every object of a kind. This can take down production services.").
+				WithAlt(strings.Replace(c.String(), "delete", "delete --dry-run=server", 1), "asks the server what would be deleted, without deleting"))
+		}
+		if len(f.pos) > 2 && (f.pos[1] == "pod" || f.pos[1] == "pods" || f.pos[1] == "po") {
+			return one(fnd(R2, c, "Deletes one pod. Its controller normally starts a replacement, but anything stored only inside it is lost."))
 		}
 		return one(fnd(R3, c, "Deletes cluster objects. Running services stop and their data may be lost.").
 			WithAlt(strings.Replace(c.String(), "delete", "delete --dry-run=server", 1), "asks the server what would be deleted, without deleting"))
@@ -50,7 +66,9 @@ func ruleKubectl(c shellparse.Command, f flags) []Finding {
 
 func ruleTerraform(c shellparse.Command, f flags) []Finding {
 	switch f.sub() {
-	case "plan", "validate", "fmt", "show", "output", "version", "init", "state", "providers", "graph":
+	case "init":
+		return one(fnd(R1, c, "Downloads providers and prepares the folder. Nothing real changes."))
+	case "plan", "validate", "fmt", "show", "output", "version", "state", "providers", "graph":
 		return one(fnd(R0, c, "Only reads or previews infrastructure."))
 	case "destroy":
 		return one(fnd(R3, c, "Destroys real infrastructure and everything running on it.").WithAlt(strings.Replace(c.String(), "destroy", "plan -destroy", 1), "shows what would be destroyed"))
@@ -63,7 +81,7 @@ func ruleTerraform(c shellparse.Command, f flags) []Finding {
 	return one(fnd(R2, c, "Changes infrastructure state."))
 }
 
-var cloudDestroy = []string{"delete", "terminate", "destroy", "remove", "rm", "purge", "drop", "deregister", "detach", "release", "revoke"}
+var cloudDestroy = []string{"rb", "delete", "terminate", "destroy", "remove", "rm", "purge", "drop", "deregister", "detach", "release", "revoke"}
 
 var cloudRead = []string{"describe", "list", "get", "ls", "show", "view", "info", "status", "whoami", "version"}
 

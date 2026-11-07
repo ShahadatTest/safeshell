@@ -12,7 +12,7 @@ import (
 	"safeshell/internal/domain"
 )
 
-//go:embed corpus/*.tsv
+//go:embed corpus/*.tsv heldout/*.tsv
 var corpusFS embed.FS
 
 // Row is one labelled command. Gap rows are known limitations: they are
@@ -38,15 +38,21 @@ type Metrics struct {
 	Gaps           []Result // gap rows, with what the classifier said
 }
 
-// LoadCorpus reads every corpus/*.tsv file.
-func LoadCorpus() ([]Row, error) {
-	files, err := corpusFS.ReadDir("corpus")
+// LoadCorpus reads every corpus/*.tsv file: the set the rules were developed against.
+func LoadCorpus() ([]Row, error) { return load("corpus") }
+
+// LoadHeldout reads heldout/*.tsv: commands labelled by someone who had not
+// seen the rules, which is the honest measure of how well they generalise.
+func LoadHeldout() ([]Row, error) { return load("heldout") }
+
+func load(dir string) ([]Row, error) {
+	files, err := corpusFS.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	var rows []Row
 	for _, f := range files {
-		fh, err := corpusFS.Open("corpus/" + f.Name())
+		fh, err := corpusFS.Open(dir + "/" + f.Name())
 		if err != nil {
 			return nil, err
 		}

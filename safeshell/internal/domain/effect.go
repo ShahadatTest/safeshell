@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // Evidence says how we know an effect, strongest first.
 type Evidence int
 
@@ -39,6 +44,21 @@ type Effect struct {
 // MarshalJSON writes the evidence as its name.
 func (e Evidence) MarshalJSON() ([]byte, error) { return []byte(`"` + e.String() + `"`), nil }
 
+// UnmarshalJSON reads an evidence name back.
+func (e *Evidence) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	for _, v := range []Evidence{Estimated, Inspected, Previewed, Observed} {
+		if v.String() == s {
+			*e = v
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown evidence %q", s)
+}
+
 // Decision is what SafeShell does with a command.
 type Decision int
 
@@ -55,3 +75,18 @@ func (d Decision) String() string {
 
 // MarshalJSON writes the decision as its name.
 func (d Decision) MarshalJSON() ([]byte, error) { return []byte(`"` + d.String() + `"`), nil }
+
+// UnmarshalJSON reads a decision name back.
+func (d *Decision) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	for _, v := range []Decision{Allow, Confirm, Block, HardBlock} {
+		if v.String() == s {
+			*d = v
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown decision %q", s)
+}

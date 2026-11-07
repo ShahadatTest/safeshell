@@ -21,6 +21,8 @@ func ruleNpm(c shellparse.Command, f flags) []Finding {
 	switch f.sub() {
 	case "uninstall", "remove", "rm", "unpublish", "deprecate":
 		return one(fnd(R2, c, "Removes or unpublishes packages."))
+	case "ls", "list", "ll", "la", "view", "info", "show", "outdated", "search", "ping", "whoami", "help", "explain", "why", "root", "prefix", "bin":
+		return one(fnd(R0, c, "Only reads package information."))
 	}
 	return one(fnd(R1, c, "Runs package or project scripts, whose effects depend on the project."))
 }

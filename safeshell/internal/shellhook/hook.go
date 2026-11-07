@@ -30,29 +30,36 @@ if [[ $- == *i* ]]; then
   bind '"\C-x\C-a": accept-line'
   bind '"\C-m": "\C-x\C-s\C-x\C-a"'
   bind '"\C-j": "\C-x\C-s\C-x\C-a"'   # Ctrl-J also accepts a line, and a pasted newline is one
+  bind '"\C-x\C-o": operate-and-get-next'
+  bind '"\C-o": "\C-x\C-s\C-x\C-o"'   # Ctrl-O runs the line and brings up the next one: guard it too
 fi
 `
 
 const zsh = `# SafeShell hook for zsh. Add to ~/.zshrc:  eval "$(ss hook zsh)"
-__ss_accept_line() {
-  if [[ -z "$SAFESHELL_OFF" && -n "${BUFFER//[[:space:]]/}" ]]; then
-    local out rc tty first unknown=()
-    first=${${(z)BUFFER}[1]}
-    whence -- "$first" >/dev/null 2>&1 || unknown=(--unknown)
-    tty=$(stty -g </dev/tty) && stty sane </dev/tty
-    out=$(command ss guard --cwd "$PWD" "${unknown[@]}" -- "$BUFFER" </dev/tty 2>/dev/tty)
-    rc=$?
-    [[ -n $tty ]] && stty "$tty" </dev/tty
-    case $rc in
-      0) BUFFER=$out ;;
-      1) BUFFER= ;;
-      *) print -u2 "\nSafeShell failed (exit $rc), so this line was NOT checked. Set SAFESHELL_OFF=1 to silence this." ;;
-    esac
-  fi
-  zle .accept-line
+# Type plain English (or start a line with ?) and SafeShell AI turns it into a checked command.
+__ss_check() {   # returns 1 when the line was cancelled
+  [[ -n "$SAFESHELL_OFF" || -z "${BUFFER//[[:space:]]/}" ]] && return 0
+  local out rc tty first unknown=()
+  first=${${(z)BUFFER}[1]}
+  whence -- "$first" >/dev/null 2>&1 || unknown=(--unknown)
+  tty=$(stty -g </dev/tty) && stty sane </dev/tty
+  out=$(command ss guard --cwd "$PWD" "${unknown[@]}" -- "$BUFFER" </dev/tty 2>/dev/tty)
+  rc=$?
+  [[ -n $tty ]] && stty "$tty" </dev/tty
+  case $rc in
+    0) BUFFER=$out ;;
+    1) BUFFER=; return 1 ;;
+    *) print -u2 "\nSafeShell failed (exit $rc), so this line was NOT checked. Set SAFESHELL_OFF=1 to silence this." ;;
+  esac
+  return 0
 }
 setopt hist_verify   # expand !! into the line first so the guard sees what would really run
-zle -N accept-line __ss_accept_line
+# Every widget that submits a line is wrapped, not just accept-line.
+for __ss_w in accept-line accept-and-hold accept-line-and-down-history accept-and-infer-next-history; do
+  eval "__ss_widget_${__ss_w//-/_}() { __ss_check || { zle .accept-line; return }; zle .${__ss_w} }"
+  zle -N ${__ss_w} __ss_widget_${__ss_w//-/_}
+done
+unset __ss_w
 `
 
 // Script returns the hook for the named shell.
