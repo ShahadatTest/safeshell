@@ -15,6 +15,7 @@ import (
 	"safeshell/internal/classify"
 	"safeshell/internal/domain"
 	"safeshell/internal/platform"
+	"safeshell/internal/report"
 	"safeshell/internal/sandbox"
 	"safeshell/internal/sandbox/overlayfs"
 )
@@ -83,7 +84,7 @@ func check(args []string, stdout, stderr io.Writer, color bool) int {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(v)
 	} else {
-		report(stdout, line, v, color)
+		printCheck(stdout, line, v, color)
 	}
 	switch v.Level {
 	case domain.R4:
@@ -96,7 +97,7 @@ func check(args []string, stdout, stderr io.Writer, color bool) int {
 
 var decision = [...]string{"ALLOW", "ALLOW (undo recorded)", "SIMULATE FIRST, THEN SNAPSHOT", "BLOCK (you can override)", "HARD BLOCK"}
 
-func report(w io.Writer, line string, v domain.Verdict, color bool) {
+func printCheck(w io.Writer, line string, v domain.Verdict, color bool) {
 	c := newPalette(color)
 	col := [...]string{c.green, c.green, c.yellow, c.red, c.red}[v.Level]
 	fmt.Fprintf(w, "%s%s %s%s  %s\n", c.bold+col, v.Level, v.Level.Label(), c.reset, decision[v.Level])
@@ -218,9 +219,9 @@ func simReport(w io.Writer, line string, r sandbox.Result) {
 	}
 	t := r.Diff.Totals()
 	fmt.Fprintf(w, "Simulated in %s (%s). Your real files were not touched.\n$ %s\n\n", r.Duration.Round(time.Millisecond), status, line)
-	fmt.Fprintf(w, "  created   %s\n  modified  %s\n  deleted   %s", plural(t.Created), plural(t.Modified), plural(t.Deleted))
+	fmt.Fprintf(w, "  created   %s\n  modified  %s\n  deleted   %s", report.Files(t.Created), report.Files(t.Modified), report.Files(t.Deleted))
 	if t.Deleted > 0 {
-		fmt.Fprintf(w, " (%s)", humanBytes(t.DeletedBytes))
+		fmt.Fprintf(w, " (%s)", report.HumanBytes(t.DeletedBytes))
 	}
 	if r.Diff.Truncated {
 		fmt.Fprint(w, " (count stopped at a limit)")
@@ -239,7 +240,7 @@ func simReport(w io.Writer, line string, r sandbox.Result) {
 			}
 			extra := ""
 			if c.IsDir && c.Files > 0 {
-				extra = fmt.Sprintf("  (%s)", plural(c.Files))
+				extra = fmt.Sprintf("  (%s)", report.Files(c.Files))
 			}
 			fmt.Fprintf(w, "  %-9s /%s%s%s\n", c.Kind, c.Path, dir, extra)
 		}
@@ -255,34 +256,6 @@ func simReport(w io.Writer, line string, r sandbox.Result) {
 	if r.Truncated {
 		fmt.Fprintln(w, "  (output cut)")
 	}
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return "1 file"
-	}
-	return fmt.Sprintf("%s files", commas(n))
-}
-
-func commas(n int) string {
-	s := fmt.Sprint(n)
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
-	}
-	return s
-}
-
-func humanBytes(b int64) string {
-	const u = 1024
-	if b < u {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(u), 0
-	for n := b / u; n >= u; n /= u {
-		div *= u
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGT"[exp])
 }
 
 func indent(s string) string {

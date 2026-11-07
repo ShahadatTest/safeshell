@@ -185,19 +185,3 @@ func TestSimulateErrors(t *testing.T) {
 		}
 	}
 }
-
-func TestFormatHelpers(t *testing.T) {
-	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1,000", 4312: "4,312", 1234567: "1,234,567"} {
-		if got := commas(n); got != want {
-			t.Errorf("commas(%d) = %q", n, got)
-		}
-	}
-	if plural(1) != "1 file" || plural(2) != "2 files" || plural(0) != "0 files" {
-		t.Error("plural wrong")
-	}
-	for b, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 1536: "1.5 KiB", 2 << 30: "2.0 GiB"} {
-		if got := humanBytes(b); got != want {
-			t.Errorf("humanBytes(%d) = %q, want %q", b, got, want)
-		}
-	}
-}

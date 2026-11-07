@@ -53,3 +53,19 @@ func TestScoreExplainsItself(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatHelpers(t *testing.T) {
+	for n, want := range map[int]string{0: "0", 999: "999", 1000: "1,000", 4312: "4,312", 1234567: "1,234,567"} {
+		if got := Commas(n); got != want {
+			t.Errorf("Commas(%d) = %q", n, got)
+		}
+	}
+	if Files(1) != "1 file" || Files(2) != "2 files" || Files(0) != "0 files" || Files(4312) != "4,312 files" {
+		t.Error("Files wrong")
+	}
+	for b, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KiB", 1536: "1.5 KiB", 2 << 30: "2.0 GiB"} {
+		if got := HumanBytes(b); got != want {
+			t.Errorf("HumanBytes(%d) = %q, want %q", b, got, want)
+		}
+	}
+}
