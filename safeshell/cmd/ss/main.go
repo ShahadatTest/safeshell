@@ -12,12 +12,17 @@ import (
 
 	"safeshell/internal/classify"
 	"safeshell/internal/domain"
+	"safeshell/internal/platform"
 )
+
+// probe is replaced in tests.
+var probe = platform.Probe
 
 const usage = `SafeShell: a safety layer for your terminal.
 
 Usage:
   ss check [--json] <command...>   rate a command without running it
+  ss doctor                        show what this machine allows (sandbox, snapshots, AI)
 
 Quote the command so your shell passes it through untouched:
   ss check 'rm -rf ~/projects'
@@ -38,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer, color bool) int {
 	switch args[0] {
 	case "check":
 		return check(args[1:], stdout, stderr, color)
+	case "doctor":
+		return doctor(stdout, probe())
 	default:
 		fmt.Fprintf(stderr, "ss: unknown command %q\n\n%s", args[0], usage)
 		return 2
@@ -111,4 +118,30 @@ func newPalette(on bool) palette {
 func useColor(f *os.File) bool {
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0 && os.Getenv("NO_COLOR") == ""
+}
+
+func doctor(w io.Writer, r platform.Report) int {
+	row := func(name string, ok bool, detail string) {
+		mark := "ok     "
+		if !ok {
+			mark = "MISSING"
+		}
+		fmt.Fprintf(w, "  %s  %-26s %s\n", mark, name, detail)
+	}
+	fmt.Fprintf(w, "SafeShell doctor (kernel %s)\n\n", r.Kernel)
+	row("user namespaces", r.UserNS, r.UserNSErr)
+	row("overlay filesystem", r.Overlay, "")
+	row("seccomp", r.Seccomp, "")
+	row("landlock", r.Landlock, "")
+	row("cgroup v2", r.CgroupV2, "")
+	fmt.Fprintf(w, "  info     %-26s %s\n", "snapshot backend", r.SnapshotBackend()+" (root is "+r.RootFS+")")
+	fmt.Fprintf(w, "  info     %-26s %s\n", "shells found", strings.Join(r.Shells, ", "))
+	fmt.Fprintf(w, "\nSandbox simulation: %v\n", map[bool]string{true: "available", false: "NOT available"}[r.CanSimulate()])
+	for _, h := range r.Hints() {
+		fmt.Fprintf(w, "  - %s\n", h)
+	}
+	if r.CanSimulate() {
+		return 0
+	}
+	return 1
 }
