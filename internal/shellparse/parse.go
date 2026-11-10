@@ -8,6 +8,7 @@ package shellparse
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -341,6 +342,7 @@ func sshSplit(args []string) (host, remote string) {
 // what it saw on cmd, and returns the real command and its arguments.
 func unwrap(args []string, cmd *Command) []string {
 	for len(args) > 0 {
+		args[0] = programName(args[0])
 		switch args[0] {
 		case "sudo", "doas":
 			cmd.Sudo = true
@@ -355,7 +357,7 @@ func unwrap(args []string, cmd *Command) []string {
 					args = args[1:]
 				}
 			}
-		case "nohup", "time", "command", "builtin", "exec", "setsid", "stdbuf":
+		case "nohup", "time", "command", "builtin", "exec", "setsid", "stdbuf", "busybox":
 			args = skipOpts(args[1:])
 		case "nice", "ionice":
 			args = skipOpts(args[1:], "-n", "-c")
@@ -372,6 +374,20 @@ func unwrap(args []string, cmd *Command) []string {
 		}
 	}
 	return args
+}
+
+// systemBins are where the standard tools live, so /bin/rm is just rm.
+var systemBins = []string{"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin"}
+
+// programName undoes the ways of writing one program that would hide it from
+// the rules: a leading backslash (\rm, the usual way to skip an alias) and the
+// full path of a system tool (/bin/rm). Other paths, such as ./rm, are left alone.
+func programName(word string) string {
+	word = strings.TrimLeft(word, `\`)
+	if slices.Contains(systemBins, path.Dir(word)) {
+		return path.Base(word)
+	}
+	return word
 }
 
 // skipOpts drops leading options; those named in withValue also consume the next word.

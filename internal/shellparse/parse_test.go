@@ -285,3 +285,27 @@ func TestEmbeddedShellInInterpreters(t *testing.T) {
 		t.Error("a printed string is not a command")
 	}
 }
+
+// Other ways of writing the same program must not hide it from the rules.
+func TestProgramNameIsNormalised(t *testing.T) {
+	tests := map[string]string{
+		`\rm -rf ~`:                   "rm",
+		`/bin/rm -rf ~`:               "rm",
+		`/usr/bin/rm -rf ~`:           "rm",
+		`busybox rm -rf ~`:            "rm",
+		`/usr/bin/sudo /bin/rm -rf ~`: "rm",
+		`\sudo rm -rf ~`:              "rm",
+		`./rm -rf ~`:                  "./rm",
+		`/home/me/bin/rm -rf ~`:       "/home/me/bin/rm",
+		`/opt/tool/bin/rm -rf ~`:      "/opt/tool/bin/rm",
+	}
+	for line, want := range tests {
+		r, err := Parse(line)
+		if err != nil {
+			t.Fatalf("%s: %v", line, err)
+		}
+		if got := r.Pipelines[0].Cmds[0].Name; got != want {
+			t.Errorf("%s: name = %q, want %q", line, got, want)
+		}
+	}
+}
