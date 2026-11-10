@@ -32,7 +32,10 @@ type Command struct {
 	Background bool
 	Remote     string // non-empty when it runs on another host over ssh
 	Downloads  bool   // an argument is a <(...) that fetches from the network
-	Redirs     []Redirect
+	// FetchedArgs are the indexes in Args of words holding a $(...) that
+	// downloads, as in  eval "$(curl ...)"  or  sh -c "$(curl ...)".
+	FetchedArgs []int
+	Redirs      []Redirect
 	// Stdin is text fed to the command by a pipe from echo/printf, a here-string
 	// or a here-document. It is how `echo "DROP TABLE x" | psql` is seen.
 	Stdin string
@@ -190,13 +193,18 @@ func (w *walker) pipeline(s *syntax.Stmt, depth int) {
 func (w *walker) build(call *syntax.CallExpr, st *syntax.Stmt, depth int) (Command, bool) {
 	words := make([]string, 0, len(call.Args))
 	downloads := false
+	var fetched []int // indexes in words
 	for _, a := range call.Args {
 		words = append(words, wordString(a))
+		idx := len(words) - 1
 		syntax.Walk(a, func(n syntax.Node) bool {
 			switch x := n.(type) {
 			case *syntax.CmdSubst:
 				saved := w.cwd
 				for _, s := range x.Stmts {
+					if fetchesNetwork(s) && !slices.Contains(fetched, idx) {
+						fetched = append(fetched, idx)
+					}
 					w.stmt(s, depth)
 				}
 				w.cwd = saved
@@ -222,6 +230,11 @@ func (w *walker) build(call *syntax.CallExpr, st *syntax.Stmt, depth int) (Comma
 		return cmd, false
 	}
 	cmd.Name, cmd.Args = rest[0], rest[1:]
+	for _, i := range fetched {
+		if j := i - (len(words) - len(rest)) - 1; j >= 0 {
+			cmd.FetchedArgs = append(cmd.FetchedArgs, j)
+		}
+	}
 	if depth < maxDepth {
 		w.nested(&cmd, depth)
 		w.stdinCode(&cmd, depth)
@@ -408,11 +421,16 @@ func skipOpts(args []string, withValue ...string) []string {
 }
 
 func fetchesNetwork(s *syntax.Stmt) bool {
-	if c, ok := s.Cmd.(*syntax.CallExpr); ok && len(c.Args) > 0 {
-		n := wordString(c.Args[0])
-		return n == "curl" || n == "wget"
-	}
-	return false
+	found := false
+	syntax.Walk(s, func(n syntax.Node) bool {
+		if c, ok := n.(*syntax.CallExpr); ok && len(c.Args) > 0 {
+			if name := programName(wordString(c.Args[0])); name == "curl" || name == "wget" {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 func isForkBomb(fd *syntax.FuncDecl) bool {

