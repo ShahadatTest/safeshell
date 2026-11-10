@@ -81,8 +81,8 @@ Go module `github.com/samarthsinh2660/safeshell` is at the repository root. Read
 - A release is a PR from a branch named exactly `release/vX.Y.Z` into `main`. Merging it triggers `.github/workflows/release.yml`, which tags, builds tarballs + `.deb` + `SHA256SUMS`, and creates the GitHub Release with the files attached.
 - The release PR contains only release prep (docs, changelog notes, version mentions). Features land through their own PRs first.
 - Version comes from the branch name via `-X main.version`; semver. `.deb` version is the tag without `v`.
-- See `CONTRIBUTING.md` (diagrams of the PR and release flow), `CODE_OF_CONDUCT.md` and `doc/debian-ubuntu.md`; keep them in sync when the workflow changes.
-- Users download the `.deb` (or tarball) from the GitHub Release. Getting into Debian/Ubuntu's own repositories is a separate, manual process described in the README.
+- See `CONTRIBUTING.md` (diagrams of the PR and release flow), `CODE_OF_CONDUCT.md` and `doc/packaging.md`; keep them in sync when the workflow changes.
+- Users download the `.deb` (or tarball) from the GitHub Release. SafeShell is not in the Debian/Ubuntu archives (the ITP was closed); see `doc/packaging.md`.
 - One-time repo setup (owner only): branch protection on `main` requiring the `check` job. No secrets are needed.
 
 ## Architecture rules
@@ -95,7 +95,7 @@ Go module `github.com/samarthsinh2660/safeshell` is at the repository root. Read
 
 ## Packaging rules
 - The command is `safeshell`, never `ss` (that name belongs to `iproute2`).
-- `debian/` must keep building offline on Debian unstable with `lintian` free of errors (command in `doc/debian-ubuntu.md`). Non-Go files the code embeds go in `DH_GOLANG_INSTALL_EXTRA` in `debian/rules`.
+- `debian/` must keep building offline on Debian unstable with `lintian` free of errors (command in `doc/packaging.md`). Non-Go files the code embeds go in `DH_GOLANG_INSTALL_EXTRA` in `debian/rules`.
 - Don't add a dependency that Debian does not package.
 
 ## Coding rules

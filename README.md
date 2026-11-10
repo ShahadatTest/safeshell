@@ -1,8 +1,8 @@
 <h1 align="center">SafeShell</h1>
 
 <p align="center"><b>A safety layer for your terminal.</b><br>
-Every command is rated by how reversible it is, tried in a sandbox first, and blocked,<br>
-confirmed or made undoable before it can hurt anything.</p>
+It rates each command by how reversible it is, tries risky ones in a sandbox first,<br>
+blocks the dangerous ones, and lets you undo.</p>
 
 <p align="center">
   <a href="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/samarthsinh2660/safeshell/actions/workflows/ci.yml/badge.svg"></a>
@@ -10,7 +10,6 @@ confirmed or made undoable before it can hurt anything.</p>
   <a href="https://codecov.io/gh/samarthsinh2660/safeshell"><img alt="Coverage" src="https://codecov.io/gh/samarthsinh2660/safeshell/graph/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg"></a>
   <img alt="Linux" src="https://img.shields.io/badge/platform-linux%20amd64%20%7C%20arm64-lightgrey">
-  <img alt="Go" src="https://img.shields.io/badge/go-1.26-00ADD8">
 </p>
 
 ```console
@@ -30,18 +29,10 @@ R4 Catastrophic  HARD BLOCK
       controls that server controls your machine.
 ```
 
-## Why
+## What it does
 
-A mistyped `rm`, a pasted `curl | sudo bash`, a `git reset --hard` on the wrong branch: most
-terminal accidents are one keystroke from irreversible, and the shell gives no warning. SafeShell
-sits between you and the shell and answers one question first: **can this be undone?**
-
-- **Rates every command, R0 to R4,** by reversibility, not by how scary it sounds.
-- **Shows the real effect.** Risky commands run in a rootless sandbox (user namespaces + OverlayFS) on a copy of your files, with the network blocked and watched. You see what would be deleted, which processes and disks it would touch, before anything happens.
-- **Blocks with a reason and a safer alternative,** and still lets you say "do it anyway".
-- **Undo that is verified.** Before an approved risky command runs, the files it will change are saved; `safeshell undo` puts them back and checks the result.
-- **Optional AI helper.** Type plain English and get a command that is checked like any other. The AI can only make a command look riskier, never safer. Runs locally or with your own Claude, GPT or Gemini key.
-- **Never in your way.** Read-only commands pass untouched, and if SafeShell itself breaks the shell hook fails open with a visible warning.
+A mistyped `rm`, a pasted `curl | sudo bash`, a `git reset --hard` on the wrong branch: the shell gives no
+warning. SafeShell sits between you and the shell and asks one question first: **can this be undone?**
 
 | Level | Meaning | What happens |
 |---|---|---|
@@ -50,6 +41,22 @@ sits between you and the shell and answers one question first: **can this be und
 | R2 | Reversible with a snapshot | snapshot taken, runs, `safeshell undo` puts it back |
 | R3 | Irreversible | blocked, with the reason and a safer alternative; you can still override |
 | R4 | Catastrophic | hard block |
+
+Risky commands run first in a rootless sandbox (user namespaces + OverlayFS) on a copy of your files, with the
+network blocked and watched, so you see what would change. An optional AI helper turns plain English into a
+command that is checked like any other.
+
+## Status and limits
+
+- SafeShell is a Semester 7 minor project by two students. **It was built with substantial help from an AI
+  coding assistant (Claude Code):** much of the code, tests and documentation were written that way. Nothing
+  here is claimed without a way to check it: `make check` runs the tests, and `safeshell ai bench` re-runs the
+  AI benchmark.
+- The classifier is a set of rules, not a guarantee. It rated 92.3% of 220 held-out commands exactly right.
+  Known gaps are listed under [Issues](https://github.com/samarthsinh2660/safeshell/issues). Keep backups; do not
+  treat SafeShell as your only safeguard.
+- Linux only, bash and zsh. The sandbox needs user namespaces (on Ubuntu 24.04+ that means one AppArmor rule).
+- Not in the Debian or Ubuntu archives (see [doc/packaging.md](doc/packaging.md)). Install from the release or the PPA.
 
 ## Install
 
@@ -138,17 +145,8 @@ Observed effects and the AI can only raise a rating, never lower it. More in
 - **Cloud.** Claude, GPT or Gemini with your own key, stored with `0600` permissions or read from
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`. Your home path is redacted before anything is sent.
 
-`safeshell ai bench` measures the active model on 43 labelled requests: local Qwen 3B scores about 97%,
-Gemini flash-lite 95-100%, with no unsafe suggestions in either.
-
-## Measured
-
-| | |
-|---|---|
-| Held-out classifier accuracy | 92.3% exactly right on 220 commands the rules were never tuned on |
-| English to command | 97% (local Qwen 3B) on 43 requests |
-| Sandbox safety sweep | 492 labelled commands run through the real binary: no file outside the sandbox changed |
-| Tests | unit, fuzz, and integration tests on a real terminal and the real kernel |
+`safeshell ai bench` measures the active model on 43 labelled requests: local Qwen 3B scored about 97% and
+Gemini flash-lite 95-100%, with no unsafe suggestions in either. Cloud results vary from run to run.
 
 ## Documentation
 
@@ -156,7 +154,7 @@ Gemini flash-lite 95-100%, with no unsafe suggestions in either.
 [Presentation](doc/ppt/safeshell.pptx) ([HTML](doc/ppt/safeshell.html)) ·
 [Contributing](CONTRIBUTING.md) ·
 [Code of Conduct](CODE_OF_CONDUCT.md) ·
-[Debian / Ubuntu packaging](doc/debian-ubuntu.md)
+[Packaging](doc/packaging.md)
 
 ## Contributing
 
@@ -166,4 +164,4 @@ To report a security problem, use GitHub's private **Security → Report a vulne
 
 ## Licence
 
-[MIT](LICENSE). Built by Samarth Vala (23BCP422) and Tavish Gupta (23BCP064) as a Semester 7 minor project.
+[MIT](LICENSE). Samarth Vala (23BCP422) and Tavish Gupta (23BCP064).

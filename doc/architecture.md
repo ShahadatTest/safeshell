@@ -74,7 +74,7 @@ This document is the "so we stay consistent" contract for a two-person team: whe
 ```
 safeshell/                        repository root = Go module root
 ├── doc/                          project documents (idea.md, architecture.md, ppt/)
-├── debian/                       Debian source package (see doc/debian-ubuntu.md)
+├── debian/                       Debian source package (see doc/packaging.md)
 ├── go.mod
 ├── Makefile                  build, test, lint, eval, fuzz
 ├── cmd/
