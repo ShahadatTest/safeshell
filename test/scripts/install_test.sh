@@ -5,6 +5,7 @@ fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/scripts" "$fixture/home"
 cp "$repo/scripts/install.sh" "$fixture/scripts/"
+# install.sh installs a prebuilt safeshell found next to scripts/, so the stub goes there.
 cat >"$fixture/safeshell" <<'STUB'
 #!/usr/bin/env bash
 [[ "$1" != doctor ]]
